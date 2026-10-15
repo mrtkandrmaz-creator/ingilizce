@@ -41,24 +41,23 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- STREAMLIT SECRETS (TOML) GÜVENLİ OKUMA ---
-def parse_secret_keys(secret_value):
-    if not secret_value:
-        return []
-    if isinstance(secret_value, list):
-        return [str(k).strip() for k in secret_value if str(k).strip()]
-    return [k.strip() for k in str(secret_value).replace(",", "\n").split("\n") if k.strip()]
-
+# --- SECRETS.TOML ÜZERİNDEN [api_keys] LİSTELERİNİ OKUMA ---
 groq_keys = []
 gemini_keys = []
 
 try:
-    if "GROQ_API_KEY" in st.secrets:
-        groq_keys = parse_secret_keys(st.secrets["GROQ_API_KEY"])
-    if "GEMINI_API_KEY" in st.secrets:
-        gemini_keys = parse_secret_keys(st.secrets["GEMINI_API_KEY"])
+    if "api_keys" in st.secrets:
+        api_sec = st.secrets["api_keys"]
+        groq_keys = api_sec.get("groq_keys", [])
+        gemini_keys = api_sec.get("gemini_keys", [])
+    else:
+        # Eski/düz format fallback (varsa)
+        if "GROQ_API_KEY" in st.secrets:
+            groq_keys = [st.secrets["GROQ_API_KEY"]]
+        if "GEMINI_API_KEY" in st.secrets:
+            gemini_keys = [st.secrets["GEMINI_API_KEY"]]
 except Exception as e:
-    st.sidebar.error(f"Secrets okunamadı: {e}")
+    st.sidebar.error(f"Secrets okuma hatası: {e}")
 
 # --- OTURUM DURUMLARI (SESSION STATE) ---
 if "messages" not in st.session_state:
@@ -68,7 +67,7 @@ if "messages" not in st.session_state:
 
 if "flashcards" not in st.session_state:
     st.session_state.flashcards = [
-        {"word": "Secure", "meaning": "Güvenli", "example": "API keys are securely stored in secrets."},
+        {"word": "Resilient", "meaning": "Dayanıklı, dirençli", "example": "You must be resilient when learning a new language."},
         {"word": "Seamless", "meaning": "Kusursuz, akıcı", "example": "We have a seamless conversation."}
     ]
 
@@ -91,9 +90,10 @@ system_prompt = f"You are Sarah, a friendly and warm female English AI teacher (
 
 
 # ==============================================================================
-# HİBRİT VE ÇOKLU ANAHTARLI YANIT / SES FONKSİYONLARI
+# SIRA İLE HİBRİT ANAHTAR DENEME FONKSİYONLARI
 # ==============================================================================
 def get_ai_response(messages_payload):
+    # 1. Önce Groq listesindeki anahtarları sırayla dene
     for g_key in groq_keys:
         try:
             client = Groq(api_key=g_key)
@@ -107,6 +107,7 @@ def get_ai_response(messages_payload):
         except Exception:
             continue
 
+    # 2. Groq'lar hata verirse Gemini listesindeki anahtarları sırayla dene
     chat_history_str = "\n".join([f"{m['role']}: {m['content']}" for m in messages_payload if m['role'] != 'system'])
     for gem_key in gemini_keys:
         try:
@@ -153,7 +154,7 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
         )
     with col_info:
         st.markdown("### Sarah (AI English Teacher)")
-        st.caption("Streamlit Secrets üzerinden otomatik hibrit anahtar yönetimi aktif.")
+        st.caption("Secrets üzerindeki çoklu anahtar havuzuyla kesintisiz hibrit bağlantı aktif.")
 
     st.divider()
 
@@ -173,7 +174,7 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
         audio_file_input = st.audio_input("Konuşmak için tıklayın")
         if audio_file_input is not None:
             if not groq_keys:
-                st.error("Ses tanıma için secrets.toml dosyasına GROQ_API_KEY eklemelisiniz.")
+                st.error("Ses tanıma işlemi için geçerli bir Groq anahtarı bulunamadı.")
             else:
                 with st.spinner("Sarah sesinizi dinliyor..."):
                     transcribed = get_transcription(audio_file_input.getvalue())
@@ -216,7 +217,7 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
                     
                     st.rerun()
                 else:
-                    st.error("Secrets üzerinde tanımlı hiçbir API anahtarı yanıt vermedi veya kotalar dolu.")
+                    st.error("Tüm API anahtarları denendi fakat hiçbiri yanıt vermedi. Anahtarlarınızın geçerliliğini kontrol edin.")
 
 
 # ==============================================================================
