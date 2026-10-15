@@ -147,13 +147,12 @@ with st.sidebar:
 groq_client = Groq(api_key=groq_api_key) if groq_api_key else None
 gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key else None
 
-# Kesin ve Katı Kurallı Sistem Promptu (Sadece sorulan soruya odaklanma)
-system_prompt = f"""You are a strict and helpful English AI teacher ({teacher_persona}) for a {selected_level} student. 
-ABSOLUTE RULES:
-1. Answer ONLY the specific question or input provided by the user. 
-2. Do NOT wander off to unrelated topics, do not invent stories, and do not introduce unasked subjects.
-3. Keep your response concise, clear, and strictly relevant to what the user just said.
-4. Always answer in English."""
+# Tekrara düşmeyen ve net yanıt vermeyi zorunlu kılan Sistem Promptu
+system_prompt = f"""You are a direct, concise, and helpful English AI teacher ({teacher_persona}) for a {selected_level} student. 
+RULES:
+1. Answer the user's exact question directly and accurately. Do NOT repeat previous phrases or fall into loops.
+2. Keep your answers brief, clear, and strictly focused on what was asked.
+3. Always answer in English."""
 
 
 # ==============================================================================
@@ -177,10 +176,9 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                 audio_html = f'<audio autoplay="true" src="data:audio/mp3;base64,{b64_audio}"></audio>'
                 st.markdown(audio_html, unsafe_allow_html=True)
 
-    # 2. Yeni Girdi İşleme (Mikrofon veya Metin)
+    # 2. Yeni Girdi Alanı (Mikrofon veya Metin)
     detected_user_text = ""
 
-    # Eğer hiç mesaj yoksa ilk karşılama mikrofonu
     if not st.session_state.messages:
         st.info("👋 Pratik yapmak için aşağıdaki mikrofona tıklayıp konuşmaya başlayın!")
         audio_input_val = st.audio_input("🎤 Konuşmaya Başla")
@@ -200,7 +198,6 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                 except Exception as e:
                     st.error(f"Whisper Hatası: {e}")
     else:
-        # Son asistan mesajının hemen altında mikrofon
         st.markdown("👇 **Sesli yanıt vermek için mikrofona tıklayın:**")
         audio_input_val = st.audio_input("🎤 Sesli Yanıt Ver")
         if audio_input_val is not None:
@@ -225,9 +222,9 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
     if text_input_val:
         detected_user_text = text_input_val
 
-    # 3. Eğer kullanıcıdan yazı veya ses elde edildiyse HEMEN işle ve ekrana yansıt
+    # 3. Girdi yakalandığı anda hemen oturuma ve ekrana ekle, ardından AI yanıtı üret
     if detected_user_text:
-        # Kullanıcı mesajını oturuma ekle
+        # Kullanıcı mesajını ekle
         st.session_state.messages.append({"role": "user", "content": detected_user_text})
 
         with st.spinner("Yapay zeka yanıt veriyor..."):
@@ -238,7 +235,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                 completion = groq_client.chat.completions.create(
                     model="llama-3.3-70b-versatile",
                     messages=messages_payload,
-                    temperature=0.3  # Düşük sıcaklık ile konudan sapma engellenir
+                    temperature=0.1  # Tekrarı önlemek ve net cevap için düşük sıcaklık
                 )
                 ai_response = completion.choices[0].message.content
             except Exception as e:
@@ -246,13 +243,13 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                     completion = groq_client.chat.completions.create(
                         model="openai/gpt-oss-20b",
                         messages=messages_payload,
-                        temperature=0.3
+                        temperature=0.1
                     )
                     ai_response = completion.choices[0].message.content
                 except Exception as e2:
                     ai_response = f"Groq API Hatası: {e2}"
 
-            # gTTS ile ses üretimi
+            # gTTS ses üretimi
             audio_bytes_data = None
             try:
                 tts = gTTS(text=ai_response, lang='en')
@@ -263,14 +260,13 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
             except Exception as tts_err:
                 st.warning(f"Ses sentezleme uyarısı: {tts_err}")
 
-            # Asistan yanıtını oturuma ekle
+            # Asistan yanıtını ekle
             st.session_state.messages.append({
                 "role": "assistant", 
                 "content": ai_response,
                 "audio_bytes": audio_bytes_data
             })
         
-        # Sayfayı yenileyerek yeni mesajların ekranda görünmesini sağla
         st.rerun()
 
 
