@@ -97,7 +97,8 @@ def get_ai_response(messages_payload):
                 temperature=0.7,
                 max_tokens=300
             )
-            return completion.choices[0].message.content
+            if completion and completion.choices:
+                return completion.choices[0].message.content
         except Exception:
             continue
 
@@ -106,9 +107,9 @@ def get_ai_response(messages_payload):
     for gem_key in gemini_keys:
         try:
             genai.configure(api_key=gem_key)
-            model = genai.GenerativeModel('gemini-3.6-flash')
+            model = genai.GenerativeModel('gemini-1.5-flash')
             response = model.generate_content(f"{system_prompt}\n\nChat History:\n{chat_history_str}")
-            if response and response.text:
+            if response and hasattr(response, 'text') and response.text:
                 return response.text
         except Exception:
             continue
