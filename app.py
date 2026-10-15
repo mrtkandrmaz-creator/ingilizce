@@ -13,19 +13,36 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- GÜVENLİ API ANAHTARI YÖNETİMİ (Esnek Streamlit Secrets Okuyucu) ---
-def get_secret_key(possible_keys):
-    for key in possible_keys:
+# --- GÜVENLİ API ANAHTARI YÖNETİMİ (Gelişmiş Çoklu Kaynak Tarayıcı) ---
+def get_any_secret(keys):
+    for key in keys:
+        # 1. Önce Streamlit Secrets kontrolü
         try:
             val = st.secrets.get(key, "")
             if val:
                 return val
         except Exception:
             pass
+        
+        # 2. Alternatif olarak doğrudan st.secrets sözlük erişimi
+        try:
+            if key in st.secrets:
+                val = st.secrets[key]
+                if val:
+                    return val
+        except Exception:
+            pass
+
+        # 3. Çevre Değişkenleri (Environment Variables) kontrolü
+        env_val = os.environ.get(key, "")
+        if env_val:
+            return env_val
+            
     return ""
 
-default_groq_key = get_secret_key(["GROQ_API_KEY", "groq_api_key", "Groq_API_Key", "GROQ", "groq"])
-default_gemini_key = get_secret_key(["GEMINI_API_KEY", "gemini_api_key", "Gemini_API_Key", "GEMINI", "gemini", "GOOGLE_API_KEY", "google_api_key"])
+# Aday anahtar isimlerinin tüm varyasyonları taranır
+default_groq_key = get_any_secret(["GROQ_API_KEY", "groq_api_key", "Groq_API_Key", "GROQ", "groq"])
+default_gemini_key = get_any_secret(["GEMINI_API_KEY", "gemini_api_key", "Gemini_API_Key", "GEMINI", "gemini", "GOOGLE_API_KEY", "google_api_key"])
 
 # --- OTURUM DURUMLARI (SESSION STATE) ---
 if "messages" not in st.session_state:
@@ -58,14 +75,14 @@ with st.sidebar:
         gemini_api_key = default_gemini_key
         
         if groq_api_key:
-            st.success("🔒 Groq API anahtarı Secrets'tan alındı.")
+            st.success("🔒 Groq API anahtarı başarıyla yüklendi!")
         else:
-            st.warning("⚠️ Groq API anahtarı secrets.toml içinde bulunamadı! Aşağıdan manuel girebilirsiniz.")
+            st.error("❌ Groq API anahtarı bulunamadı! Kutucuğu işaretleyip manuel girebilirsiniz.")
             
         if gemini_api_key:
-            st.success("🔒 Gemini API anahtarı Secrets'tan alındı.")
+            st.success("🔒 Gemini API anahtarı başarıyla yüklendi!")
         else:
-            st.warning("⚠️ Gemini API anahtarı secrets.toml içinde bulunamadı!")
+            st.warning("⚠️ Gemini API anahtarı bulunamadı.")
     
     st.divider()
     app_mode = st.radio("Uygulama Modu", ["🗣️ Canlı Sohbet & Sesli Pratik", "🎴 Kelime Kartları (Flashcards)"])
@@ -91,8 +108,8 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
     st.title("🗣️ LearnAI: Canlı İngilizce Pratik")
     st.caption("Groq Whisper (STT) + Groq Llama 3 (Hızlı Sohbet) + Gemini (Gramer Analizi) + gTTS (TTS)")
 
-    if not groq_api_key:
-        st.error("🚨 Groq API anahtarı tanımlı değil! Lütfen sol menüden anahtarınızı girin veya Streamlit secrets ayarlarınızı kontrol edin.")
+    if not groq_client:
+        st.error("🚨 Groq API anahtarı aktif değil! Lütfen sol menüdeki **'Özel API Anahtarı Gir'** seçeneğini işaretleyerek anahtarınızı ilgili alana yapıştırın.")
 
     col_chat, col_feedback = st.columns([2, 1])
 
@@ -148,6 +165,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         messages_payload.extend([{"role": m["role"], "content": m["content"]} for m in st.session_state.messages])
 
                         try:
+                            # Önce en güncel ve hızlı modeli dener
                             completion = groq_client.chat.completions.create(
                                 model="llama-3.3-70b-versatile",
                                 messages=messages_payload,
@@ -155,8 +173,8 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                             )
                             ai_response = completion.choices[0].message.content
                         except Exception as e:
-                            # Model uyumsuzluklarına karşı alternatif model fallback denemesi
                             try:
+                                # Alternatif yedek model
                                 completion = groq_client.chat.completions.create(
                                     model="llama3-70b-8192",
                                     messages=messages_payload,
@@ -201,7 +219,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         Keep it short and encouraging.
                         """
                         response = gemini_client.models.generate_content(
-                            model='gemini-3.6-flash',
+                            model='gemini-2.5-flash',
                             contents=analysis_prompt,
                         )
                         st.info(response.text)
