@@ -1,4 +1,3 @@
-import os
 import io
 import json
 import streamlit as st
@@ -51,7 +50,6 @@ try:
         groq_keys = api_sec.get("groq_keys", [])
         gemini_keys = api_sec.get("gemini_keys", [])
     else:
-        # Eski/düz format fallback (varsa)
         if "GROQ_API_KEY" in st.secrets:
             groq_keys = [st.secrets["GROQ_API_KEY"]]
         if "GEMINI_API_KEY" in st.secrets:
@@ -90,10 +88,10 @@ system_prompt = f"You are Sarah, a friendly and warm female English AI teacher (
 
 
 # ==============================================================================
-# SIRA İLE HİBRİT ANAHTAR DENEME FONKSİYONLARI
+# ÇOKLU API ANAHTARI DESTEKLİ HİBRİT YANIT FONKSİYONLARI
 # ==============================================================================
 def get_ai_response(messages_payload):
-    # 1. Önce Groq listesindeki anahtarları sırayla dene
+    # 1. Groq anahtarlarını sırayla dene (herhangi biri çalışana kadar)
     for g_key in groq_keys:
         try:
             client = Groq(api_key=g_key)
@@ -107,7 +105,7 @@ def get_ai_response(messages_payload):
         except Exception:
             continue
 
-    # 2. Groq'lar hata verirse Gemini listesindeki anahtarları sırayla dene
+    # 2. Groq anahtarlarının tümü hata verirse Gemini anahtarlarını sırayla dene
     chat_history_str = "\n".join([f"{m['role']}: {m['content']}" for m in messages_payload if m['role'] != 'system'])
     for gem_key in gemini_keys:
         try:
@@ -158,12 +156,13 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
 
     st.divider()
 
+    # Sohbet geçmişini ekrana basma
     for msg in st.session_state.messages:
         avatar_icon = "👩‍🏫" if msg["role"] == "assistant" else "👤"
         with st.chat_message(msg["role"], avatar=avatar_icon):
             st.markdown(msg["content"])
 
-    user_query = ""
+    user_query = None
 
     st.markdown("---")
     st.markdown("🎙️ **Cevabınızı sesli kaydedin veya yazın:**")
@@ -188,6 +187,7 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
         if text_query:
             user_query = text_query
 
+    # Eğer bir girdi (ses veya yazı) alındıysa süreci işlet
     if user_query:
         st.session_state.messages.append({"role": "user", "content": user_query})
         with st.chat_message("user", avatar="👤"):
@@ -217,7 +217,7 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
                     
                     st.rerun()
                 else:
-                    st.error("Tüm API anahtarları denendi fakat hiçbiri yanıt vermedi. Anahtarlarınızın geçerliliğini kontrol edin.")
+                    st.error("Tüm API anahtarları denendi fakat hiçbiri yanıt vermedi. Lütfen secrets.toml dosyasındaki anahtarlarınızı kontrol edin.")
 
 
 # ==============================================================================
