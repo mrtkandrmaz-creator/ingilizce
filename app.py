@@ -41,7 +41,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- ÇOKLU API ANAHTARLARINI ESNEK OKUMA (GÜVENLİ YÖNTEM) ---
+# --- ÇOKLU API ANAHTARLARINI ESNEK OKUMA ---
 groq_keys = []
 gemini_keys = []
 
@@ -55,13 +55,11 @@ def extract_keys(val):
     return []
 
 try:
-    # 1. Yöntem: [api_keys] tablosu altından okumayı dene
     if "api_keys" in st.secrets:
         sec = st.secrets["api_keys"]
         groq_keys = extract_keys(sec.get("groq_keys", []))
         gemini_keys = extract_keys(sec.get("gemini_keys", []))
 
-    # 2. Yöntem: Eğer [api_keys] boş geldiyse doğrudan kök dizinden (root) dene
     if not groq_keys and "GROQ_API_KEY" in st.secrets:
         groq_keys = extract_keys(st.secrets["GROQ_API_KEY"])
         
@@ -94,7 +92,7 @@ with st.sidebar:
     st.write(f"**Yüklü Gemini Key:** {len(gemini_keys)} adet")
     
     if len(groq_keys) == 0 and len(gemini_keys) == 0:
-        st.warning("⚠️ Hiçbir API anahtarı algılanamadı! secrets.toml dosyanızı kontrol edin.")
+        st.warning("⚠️ Hiçbir API anahtarı algılanamadı!")
     
     st.divider()
     app_mode = st.radio("Mod Seçimi", ["🗣️ Canlı Sesli Sohbet", "🎴 Kelime Kartları"])
@@ -105,17 +103,17 @@ system_prompt = f"You are Sarah, a friendly and warm female English AI teacher (
 
 
 # ==============================================================================
-# HİBRİT VE GÜVENLİ YANIT ÜRETME FONKSİYONLARI
+# GÜNCELLENMİŞ HİBRİT YANIT ÜRETME FONKSİYONLARI (DOĞRU MODEL İSİMLERİYLE)
 # ==============================================================================
 def get_ai_response(messages_payload):
     errors = []
     
-    # 1. Groq anahtarlarını dene
+    # 1. Groq anahtarlarını güncel model adıyla dene
     for i, g_key in enumerate(groq_keys):
         try:
             client = Groq(api_key=g_key)
             completion = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model="llama-3.3-70b-versatile",  # Güncel ve çalışan Groq modeli
                 messages=messages_payload,
                 temperature=0.7,
                 max_tokens=300
@@ -125,12 +123,13 @@ def get_ai_response(messages_payload):
         except Exception as e:
             errors.append(f"Groq Key #{i+1} Hatası: {str(e)}")
 
-    # 2. Gemini anahtarlarını dene
+    # 2. Gemini anahtarlarını güncel model adıyla dene
     chat_history_str = "\n".join([f"{m['role']}: {m['content']}" for m in messages_payload if m['role'] != 'system'])
     for i, gem_key in enumerate(gemini_keys):
         try:
             genai.configure(api_key=gem_key)
-            model = genai.GenerativeModel('gemini-3.6-flash')
+            # Kota aşımı riskine karşı en kararlı flash modeli
+            model = genai.GenerativeModel('gemini-1.5-flash')
             response = model.generate_content(f"{system_prompt}\n\nChat History:\n{chat_history_str}")
             if response and hasattr(response, 'text') and response.text:
                 return response.text, None
@@ -171,7 +170,7 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
         )
     with col_info:
         st.markdown("### Sarah (AI English Teacher)")
-        st.caption("Esnek çoklu anahtar okuma modu aktif.")
+        st.caption("Güncel model eşleştirmeleri ve hata toleranslı hibrit sistem aktif.")
 
     st.divider()
 
@@ -234,12 +233,10 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
                     
                     st.rerun()
                 else:
-                    st.error("Hiçbir API yanıt vermedi. Karşılaşılan teknik detaylar:")
+                    st.error("Tüm API anahtarları kota veya model hatası döndürdü. Detaylar:")
                     if debug_errors:
                         for err in debug_errors:
                             st.code(err)
-                    else:
-                        st.warning("Yüklü API anahtarı bulunamadı. Lütfen secrets.toml dosyasını kontrol edin.")
 
 
 # ==============================================================================
