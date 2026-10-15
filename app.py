@@ -13,25 +13,51 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- GÜVENLİ API ANAHTARI YÖNETİMİ ---
-def get_env_or_secret(key_list):
-    for k in key_list:
-        try:
-            if hasattr(st, "secrets") and k in st.secrets:
-                val = st.secrets[k]
-                if val:
-                    return val
-        except Exception:
-            pass
-        
-        env_val = os.environ.get(k)
-        if env_val:
-            return env_val
-    return ""
+# --- GÜVENLİ VE ESNEK API ANAHTARI YÖNETİMİ ([api_keys] TOML DESTEĞİ) ---
+def get_groq_key():
+    try:
+        if hasattr(st, "secrets"):
+            # 1. [api_keys] altındaki groq_keys listesi kontrolü
+            if "api_keys" in st.secrets and "groq_keys" in st.secrets["api_keys"]:
+                keys = st.secrets["api_keys"]["groq_keys"]
+                if isinstance(keys, list) and len(keys) > 0:
+                    return keys[0]
+            # 2. Düz groq_keys listesi kontrolü
+            if "groq_keys" in st.secrets:
+                keys = st.secrets["groq_keys"]
+                if isinstance(keys, list) and len(keys) > 0:
+                    return keys[0]
+            # 3. Klasik düz metin anahtar kontrolü
+            if "GROQ_API_KEY" in st.secrets:
+                return st.secrets["GROQ_API_KEY"]
+    except Exception:
+        pass
+    return os.environ.get("GROQ_API_KEY", "")
 
-# Otomatik anahtar tespiti
-extracted_groq = get_env_or_secret(["GROQ_API_KEY", "groq_api_key", "GROQ", "groq"])
-extracted_gemini = get_env_or_secret(["GEMINI_API_KEY", "gemini_api_key", "GOOGLE_API_KEY", "google_api_key", "GEMINI", "gemini"])
+def get_gemini_key():
+    try:
+        if hasattr(st, "secrets"):
+            # 1. [api_keys] altındaki gemini_keys listesi kontrolü
+            if "api_keys" in st.secrets and "gemini_keys" in st.secrets["api_keys"]:
+                keys = st.secrets["api_keys"]["gemini_keys"]
+                if isinstance(keys, list) and len(keys) > 0:
+                    return keys[0]
+            # 2. Düz gemini_keys listesi kontrolü
+            if "gemini_keys" in st.secrets:
+                keys = st.secrets["gemini_keys"]
+                if isinstance(keys, list) and len(keys) > 0:
+                    return keys[0]
+            # 3. Klasik düz metin anahtar kontrolü
+            if "GEMINI_API_KEY" in st.secrets:
+                return st.secrets["GEMINI_API_KEY"]
+            if "GOOGLE_API_KEY" in st.secrets:
+                return st.secrets["GOOGLE_API_KEY"]
+    except Exception:
+        pass
+    return os.environ.get("GEMINI_API_KEY", os.environ.get("GOOGLE_API_KEY", ""))
+
+extracted_groq = get_groq_key()
+extracted_gemini = get_gemini_key()
 
 # --- OTURUM DURUMLARI (SESSION STATE) ---
 if "messages" not in st.session_state:
@@ -60,13 +86,13 @@ with st.sidebar:
         groq_api_key = st.text_input("Groq API Key", type="password", value=extracted_groq)
     else:
         groq_api_key = extracted_groq
-        st.success("🔒 Groq API anahtarı yüklendi.")
+        st.success("🔒 Groq API anahtarı başarıyla yüklendi.")
 
     if use_manual_keys or not extracted_gemini:
         gemini_api_key = st.text_input("Gemini API Key", type="password", value=extracted_gemini)
     else:
         gemini_api_key = extracted_gemini
-        st.success("🔒 Gemini API anahtarı yüklendi.")
+        st.success("🔒 Gemini API anahtarı başarıyla yüklendi.")
     
     st.divider()
     app_mode = st.radio("Uygulama Modu", ["🗣️ Canlı Sohbet & Sesli Pratik", "🎴 Kelime Kartları (Flashcards)"])
@@ -93,7 +119,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
     st.caption("Groq Whisper (STT) + Groq Llama 3.3 (Hızlı Sohbet) + Gemini (Gramer Analizi) + gTTS (TTS)")
 
     if not groq_client:
-        st.error("🚨 Groq API anahtarı eksik! Lütfen sol menüdeki **'Özel API Anahtarı Gir / Düzenle'** kutucuğunu işaretleyerek Groq anahtarınızı yapıştırın.")
+        st.error("🚨 Groq API anahtarı bulunamadı! Lütfen sol menüden anahtarınızı girin veya secrets.toml ayarlarınızı kontrol edin.")
 
     col_chat, col_feedback = st.columns([2, 1])
 
@@ -149,7 +175,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         messages_payload.extend([{"role": m["role"], "content": m["content"]} for m in st.session_state.messages])
 
                         try:
-                            # Aktif Groq modeli (Llama 3.3 70B)
+                            # Güncel ve aktif Groq Llama 3.3 modeli
                             completion = groq_client.chat.completions.create(
                                 model="llama-3.3-70b-versatile",
                                 messages=messages_payload,
@@ -158,7 +184,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                             ai_response = completion.choices[0].message.content
                         except Exception as e:
                             try:
-                                # Alternatif aktif yedek model
+                                # Alternatif yedek model
                                 completion = groq_client.chat.completions.create(
                                     model="openai/gpt-oss-20b",
                                     messages=messages_payload,
@@ -203,7 +229,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         Keep it short and encouraging.
                         """
                         response = gemini_client.models.generate_content(
-                            model='gemini-3.6-flash',
+                            model='gemini-2.5-flash',
                             contents=analysis_prompt,
                         )
                         st.info(response.text)
