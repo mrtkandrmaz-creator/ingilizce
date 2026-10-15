@@ -14,7 +14,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- ÖZEL CSS (Görünür Mesaj Kutuları ve Modern Tasarım) ---
+# --- ÖZEL CSS (Net Okunabilirlik ve Görünürlük) ---
 st.markdown("""
 <style>
 .user-msg {
@@ -105,6 +105,9 @@ extracted_gemini = get_gemini_key()
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+if "last_processed_audio" not in st.session_state:
+    st.session_state.last_processed_audio = None
+
 if "flashcards" not in st.session_state:
     st.session_state.flashcards = [
         {"word": "Persevere", "meaning": "Azim göstermek, sebat etmek", "example": "You must persevere to master a new language."},
@@ -147,12 +150,12 @@ with st.sidebar:
 groq_client = Groq(api_key=groq_api_key) if groq_api_key else None
 gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key else None
 
-# Tekrara düşmeyen ve net yanıt vermeyi zorunlu kılan Sistem Promptu
-system_prompt = f"""You are a direct, concise, and helpful English AI teacher ({teacher_persona}) for a {selected_level} student. 
-RULES:
-1. Answer the user's exact question directly and accurately. Do NOT repeat previous phrases or fall into loops.
-2. Keep your answers brief, clear, and strictly focused on what was asked.
-3. Always answer in English."""
+# Tekrarları Önleyen Sıkılaştırılmış Sistem Talimatı
+system_prompt = f"""You are a concise English AI tutor ({teacher_persona}) for a {selected_level} student.
+CRITICAL RULES:
+1. Provide EXACTLY ONE response to the user's question. Never duplicate or repeat your answers.
+2. Answer directly and stay strictly relevant to the user's message.
+3. Always respond in English."""
 
 
 # ==============================================================================
@@ -165,8 +168,8 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
     if not groq_client:
         st.error("🚨 Groq API anahtarı bulunamadı! Lütfen sol menüden anahtarınızı girin.")
 
-    # 1. Önce mevcut tüm mesaj geçmişini ekrana yazdır
-    for i, msg in enumerate(st.session_state.messages):
+    # 1. Mevcut mesaj geçmişini doğrudan HTML kartları ile göster
+    for msg in st.session_state.messages:
         if msg["role"] == "user":
             st.markdown(f'<div class="user-msg"><b>You:</b> {msg["content"]}</div>', unsafe_allow_html=True)
         else:
@@ -176,16 +179,19 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                 audio_html = f'<audio autoplay="true" src="data:audio/mp3;base64,{b64_audio}"></audio>'
                 st.markdown(audio_html, unsafe_allow_html=True)
 
-    # 2. Yeni Girdi Alanı (Mikrofon veya Metin)
-    detected_user_text = ""
+    # 2. Girdi Alma (Mikrofon)
+    st.markdown("👇 **Sesli yanıt vermek için mikrofona tıklayın:**")
+    audio_input_val = st.audio_input("🎤 Konuşmayı Kaydet", key="voice_recorder")
+    
+    new_user_text = ""
 
-    if not st.session_state.messages:
-        st.info("👋 Pratik yapmak için aşağıdaki mikrofona tıklayıp konuşmaya başlayın!")
-        audio_input_val = st.audio_input("🎤 Konuşmaya Başla")
-        if audio_input_val is not None:
+    if audio_input_val is not None:
+        audio_bytes = audio_input_val.getvalue()
+        # Aynı ses dosyasını tekrar işleyip birden fazla cevap üretmeyi önle
+        if st.session_state.last_processed_audio != audio_bytes:
+            st.session_state.last_processed_audio = audio_bytes
             with st.spinner("Sesiniz metne dönüştürülüyor..."):
                 try:
-                    audio_bytes = audio_input_val.getvalue()
                     audio_io = io.BytesIO(audio_bytes)
                     audio_io.name = "audio.wav"
                     transcription = groq_client.audio.transcriptions.create(
@@ -194,38 +200,19 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         response_format="text",
                         language="en"
                     )
-                    detected_user_text = transcription.strip()
-                except Exception as e:
-                    st.error(f"Whisper Hatası: {e}")
-    else:
-        st.markdown("👇 **Sesli yanıt vermek için mikrofona tıklayın:**")
-        audio_input_val = st.audio_input("🎤 Sesli Yanıt Ver")
-        if audio_input_val is not None:
-            with st.spinner("Sesiniz metne dönüştürülüyor..."):
-                try:
-                    audio_bytes = audio_input_val.getvalue()
-                    audio_io = io.BytesIO(audio_bytes)
-                    audio_io.name = "audio.wav"
-                    transcription = groq_client.audio.transcriptions.create(
-                        file=(audio_io.name, audio_io.read()),
-                        model="whisper-large-v3",
-                        response_format="text",
-                        language="en"
-                    )
-                    detected_user_text = transcription.strip()
+                    new_user_text = transcription.strip()
                 except Exception as e:
                     st.error(f"Whisper Hatası: {e}")
 
     # Alternatif Metin Girişi
-    st.markdown("---")
-    text_input_val = st.chat_input("Veya İngilizce mesajınızı buraya yazın...")
+    text_input_val = st.chat_input("Veya mesajınızı buraya yazın...")
     if text_input_val:
-        detected_user_text = text_input_val
+        new_user_text = text_input_val
 
-    # 3. Girdi yakalandığı anda hemen oturuma ve ekrana ekle, ardından AI yanıtı üret
-    if detected_user_text:
-        # Kullanıcı mesajını ekle
-        st.session_state.messages.append({"role": "user", "content": detected_user_text})
+    # 3. Yanıt Üretme ve Hafızaya Kaydetme
+    if new_user_text:
+        # Mesajı bir kez ekle
+        st.session_state.messages.append({"role": "user", "content": new_user_text})
 
         with st.spinner("Yapay zeka yanıt veriyor..."):
             messages_payload = [{"role": "system", "content": system_prompt}]
@@ -235,21 +222,13 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                 completion = groq_client.chat.completions.create(
                     model="llama-3.3-70b-versatile",
                     messages=messages_payload,
-                    temperature=0.1  # Tekrarı önlemek ve net cevap için düşük sıcaklık
+                    temperature=0.1
                 )
                 ai_response = completion.choices[0].message.content
             except Exception as e:
-                try:
-                    completion = groq_client.chat.completions.create(
-                        model="openai/gpt-oss-20b",
-                        messages=messages_payload,
-                        temperature=0.1
-                    )
-                    ai_response = completion.choices[0].message.content
-                except Exception as e2:
-                    ai_response = f"Groq API Hatası: {e2}"
+                ai_response = f"Yanıt alınamadı: {e}"
 
-            # gTTS ses üretimi
+            # gTTS ile ses üret
             audio_bytes_data = None
             try:
                 tts = gTTS(text=ai_response, lang='en')
@@ -258,15 +237,14 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                 audio_fp.seek(0)
                 audio_bytes_data = audio_fp.read()
             except Exception as tts_err:
-                st.warning(f"Ses sentezleme uyarısı: {tts_err}")
+                pass
 
-            # Asistan yanıtını ekle
             st.session_state.messages.append({
                 "role": "assistant", 
                 "content": ai_response,
                 "audio_bytes": audio_bytes_data
             })
-        
+
         st.rerun()
 
 
