@@ -164,35 +164,33 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                 except Exception as e:
                     st.error(f"Hata: {e}")
     
-    # 2. Mesaj geçmişini ve HER YAPAY ZEKA YANITINDAN SONRA mikrofonu gösterelim
+    # 2. Mevcut mesaj geçmişini ekrana yazdır (Kullanıcı ve Asistan mesajları)
     for i, msg in enumerate(st.session_state.messages):
         with st.chat_message(msg["role"]):
             st.write(msg["content"])
-            # Eğer asistan mesajı ise ve ses dosyası oturumda saklandıysa otomatik oynatma ile sesçalar ekle
             if msg["role"] == "assistant" and "audio_bytes" in msg:
                 st.audio(msg["audio_bytes"], format="audio/mp3", autoplay=True)
         
-        # Eğer mesaj bir assistant (yapay zeka) mesajı ise, hemen altına mikrofon koyalım
-        if msg["role"] == "assistant":
-            if i == len(st.session_state.messages) - 1:
-                st.markdown("👇 **Sesli yanıt vermek için mikrofona tıklayın:**")
-                audio_file_input = st.audio_input(f"🎤 Sesli Yanıt Ver (Cevap #{i})")
-                
-                if audio_file_input is not None and groq_client:
-                    with st.spinner("Sesiniz metne dönüştürülüyor..."):
-                        try:
-                            audio_bytes = audio_file_input.getvalue()
-                            audio_io = io.BytesIO(audio_bytes)
-                            audio_io.name = "audio.wav"
-                            transcription = groq_client.audio.transcriptions.create(
-                                file=(audio_io.name, audio_io.read()),
-                                model="whisper-large-v3",
-                                response_format="text",
-                                language="en"
-                            )
-                            user_text = transcription.strip()
-                        except Exception as e:
-                            st.error(f"Hata: {e}")
+        # Asistan mesajının hemen altına yeni sesli yanıt mikrofonunu yerleştir
+        if msg["role"] == "assistant" and i == len(st.session_state.messages) - 1:
+            st.markdown("👇 **Sesli yanıt vermek için mikrofona tıklayın:**")
+            audio_file_input = st.audio_input(f"🎤 Sesli Yanıt Ver (Cevap #{i})")
+            
+            if audio_file_input is not None and groq_client:
+                with st.spinner("Sesiniz metne dönüştürülüyor..."):
+                    try:
+                        audio_bytes = audio_file_input.getvalue()
+                        audio_io = io.BytesIO(audio_bytes)
+                        audio_io.name = "audio.wav"
+                        transcription = groq_client.audio.transcriptions.create(
+                            file=(audio_io.name, audio_io.read()),
+                            model="whisper-large-v3",
+                            response_format="text",
+                            language="en"
+                        )
+                        user_text = transcription.strip()
+                    except Exception as e:
+                        st.error(f"Hata: {e}")
 
     # Alternatif Metin Girişi
     st.markdown("---")
@@ -200,8 +198,9 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
     if text_input_val:
         user_text = text_input_val
 
-    # Kullanıcıdan girdi alındıysa (Ses veya Metin) ekrana hemen yaz ve işleme koy
+    # 3. Kullanıcıdan bir girdi (Ses veya Yazı) geldiyse HEMEN ekrana yaz ve işleme koy
     if user_text:
+        # Önce kullanıcı mesajını hafızaya ve ekrana ekle
         st.session_state.messages.append({"role": "user", "content": user_text})
         with st.chat_message("user"):
             st.write(user_text)
@@ -232,7 +231,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
 
                     st.write(ai_response)
 
-                    # gTTS ile Seslendirme (Otomatik oynatma aktif)
+                    # gTTS ile otomatik seslendirme
                     try:
                         tts = gTTS(text=ai_response, lang='en')
                         audio_fp = io.BytesIO()
@@ -242,7 +241,6 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         
                         st.audio(audio_bytes_data, format="audio/mp3", autoplay=True)
                         
-                        # Asistan mesajını ve ses verisini oturuma kaydet
                         st.session_state.messages.append({
                             "role": "assistant", 
                             "content": ai_response,
@@ -252,7 +250,6 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         st.warning(f"Ses sentezleme uyarısı: {tts_err}")
                         st.session_state.messages.append({"role": "assistant", "content": ai_response})
                 
-                # Sayfayı yenileyerek yeni asistan mesajının altında mikrofonun hemen belirmesini sağla
                 st.rerun()
 
 
