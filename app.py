@@ -14,6 +14,14 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- GÜVENLİ API ANAHTARI YÖNETİMİ (Streamlit Secrets) ---
+try:
+    default_groq_key = st.secrets.get("GROQ_API_KEY", "")
+    default_gemini_key = st.secrets.get("GEMINI_API_KEY", "")
+except Exception:
+    default_groq_key = ""
+    default_gemini_key = ""
+
 # --- OTURUM DURUMLARI (SESSION STATE) ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -34,8 +42,16 @@ if "show_meaning" not in st.session_state:
 # --- SIDEBAR (AYARLAR VE MOD SEÇİMİ) ---
 with st.sidebar:
     st.title("⚙️ Kontrol Paneli")
-    groq_api_key = st.text_input("Groq API Key", type="password", value=os.environ.get("GROQ_API_KEY", ""))
-    gemini_api_key = st.text_input("Gemini API Key", type="password", value=os.environ.get("GEMINI_API_KEY", ""))
+    
+    use_manual_keys = st.checkbox("Özel API Anahtarı Gir", value=False)
+    
+    if use_manual_keys:
+        groq_api_key = st.text_input("Groq API Key", type="password")
+        gemini_api_key = st.text_input("Gemini API Key", type="password")
+    else:
+        groq_api_key = default_groq_key
+        gemini_api_key = default_gemini_key
+        st.success("🔒 API anahtarları Streamlit Secrets'tan alınıyor.")
     
     st.divider()
     app_mode = st.radio("Uygulama Modu", ["🗣️ Canlı Sohbet & Sesli Pratik", "🎴 Kelime Kartları (Flashcards)"])
@@ -61,20 +77,19 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
     st.title("🗣️ LearnAI: Canlı İngilizce Pratik")
     st.caption("Groq Whisper (STT) + Groq Llama 3 (Hızlı Sohbet) + Gemini (Gramer Analizi) + gTTS (TTS)")
 
-    # İki Kolonlu Düzen: Sol tarafta Sohbet, Sağ tarafta Gemini Gramer Koçu
     col_chat, col_feedback = st.columns([2, 1])
 
     with col_chat:
         st.subheader("💬 Sohbet Ekranı")
         
-        # Geçmiş Mesajları Göster
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.write(msg["content"])
 
-        # Girdi Alanı (Ses & Metin)
         st.markdown("---")
         st.write("🎙️ **Mikrofon ile Konuşun:**")
+        
+        # Mikrofon Kaydedici
         audio_recorded = mic_recorder(
             start_prompt="🔴 Kaydı Başlat", 
             stop_prompt="⏹️ Bitir ve Gönder", 
@@ -82,7 +97,6 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
         )
         
         text_input = st.chat_input("Veya buraya İngilizce yazın...")
-
         user_text = ""
 
         # 1. MİKROFON GİRDİSİ -> GROQ WHISPER STT
@@ -99,7 +113,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         response_format="text",
                         language="en"
                     )
-                    user_text = transcription
+                    user_text = transcription.strip()
                 except Exception as e:
                     st.error(f"Groq Whisper Hatası: {e}")
 
@@ -112,10 +126,9 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
             with st.chat_message("user"):
                 st.write(user_text)
 
-            # Groq Llama3 ile Hızlı Yanıt Üretme
             if groq_client:
                 with st.chat_message("assistant"):
-                    with st.spinner("Yanıt üretiliyor..."):
+                    with st.spinner("Yapay zeka yanıt veriyor..."):
                         messages_payload = [{"role": "system", "content": system_prompt}]
                         messages_payload.extend([{"role": m["role"], "content": m["content"]} for m in st.session_state.messages])
 
@@ -128,12 +141,12 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         st.write(ai_response)
                         st.session_state.messages.append({"role": "assistant", "content": ai_response})
 
-                        # gTTS ile Seslendirme
+                        # gTTS ile Seslendirme (Tarayıcı bloklamasını önlemek için autoplay kaldırıldı, manuel çalma butonu eklendi)
                         tts = gTTS(text=ai_response, lang='en')
                         audio_fp = io.BytesIO()
                         tts.write_to_fp(audio_fp)
                         audio_fp.seek(0)
-                        st.audio(audio_fp, format="audio/mp3", autoplay=True)
+                        st.audio(audio_fp, format="audio/mp3")
 
     # Sağ Kolon: Gemini ile Gramer ve Kelime Analizi
     with col_feedback:
@@ -183,7 +196,6 @@ elif app_mode == "🎴 Kelime Kartları (Flashcards)":
         if cards:
             current_card = cards[idx]
             
-            # Kart Tasarımı
             st.markdown(f"""
             <div style="border:2px solid #4CAF50; border-radius:15px; padding:30px; text-align:center; background-color:#1E1E1E;">
                 <h1 style="color:#4CAF50; font-size:48px;">{current_card['word']}</h1>
@@ -193,14 +205,12 @@ elif app_mode == "🎴 Kelime Kartları (Flashcards)":
 
             st.write("")
             
-            # Anlamı Göster / Gizle Butonu
             if st.button("👁️ Türkçe Anlamını Göster / Gizle"):
                 st.session_state.show_meaning = not st.session_state.show_meaning
 
             if st.session_state.show_meaning:
                 st.success(f"**Anlamı:** {current_card['meaning']}")
 
-            # İlerleme Butonları
             btn_prev, btn_next = st.columns(2)
             with btn_prev:
                 if st.button("⬅️ Önceki Kart"):
@@ -239,4 +249,4 @@ elif app_mode == "🎴 Kelime Kartları (Flashcards)":
                     except Exception as e:
                         st.error(f"Kelime üretilirken hata oluştu: {e}")
             else:
-                st.error("Lütfen Gemini API Key girin.")
+                st.error("Lütfen geçerli bir Gemini API Key olduğundan emin olun.")
