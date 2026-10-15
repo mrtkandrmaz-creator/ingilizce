@@ -1,0 +1,11 @@
+streamlit
+streamlit-drawable-canvas
+google-generativeai
+google-genai
+streamlit
+matplotlib
+pandas
+streamlit
+google-genai
+reportlab
+python-docx

@@ -1,0 +1,9 @@
+# Streamlit secrets (Asla GitHub'a gitmemeli!)
+.streamlit/secrets.toml
+
+# Python önbellek ve sanal ortamlar
+__pycache__/
+venv/
+.env
+.DS_Store
+*.pyc
