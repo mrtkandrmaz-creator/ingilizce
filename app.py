@@ -13,13 +13,25 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- GÜVENLİ API ANAHTARI YÖNETİMİ (Streamlit Secrets) ---
-try:
-    default_groq_key = st.secrets.get("GROQ_API_KEY", "")
-    default_gemini_key = st.secrets.get("GEMINI_API_KEY", "")
-except Exception:
-    default_groq_key = ""
-    default_gemini_key = ""
+# --- ESNEK VE GÜVENLİ API ANAHTARI YÖNETİMİ (Streamlit Secrets) ---
+def get_secret(key_names):
+    """Secrets.toml dosyasından farklı büyük/küçük harf kombinasyonlarını güvenle okur."""
+    for key in key_names:
+        try:
+            val = st.secrets.get(key, "")
+            if val:
+                return val
+        except Exception:
+            pass
+    # Alternatif olarak environment değişkenlerini de kontrol et
+    for key in key_names:
+        val = os.environ.get(key, "")
+        if val:
+            return val
+    return ""
+
+default_groq_key = get_secret(["GROQ_API_KEY", "groq_api_key", "Groq_API_Key"])
+default_gemini_key = get_secret(["GEMINI_API_KEY", "gemini_api_key", "Gemini_API_Key"])
 
 # --- OTURUM DURUMLARI (SESSION STATE) ---
 if "messages" not in st.session_state:
@@ -50,7 +62,10 @@ with st.sidebar:
     else:
         groq_api_key = default_groq_key
         gemini_api_key = default_gemini_key
-        st.success("🔒 API anahtarları Streamlit Secrets'tan alınıyor.")
+        if groq_api_key or gemini_api_key:
+            st.success("🔒 API anahtarları otomatik algılandı.")
+        else:
+            st.warning("⚠️ API anahtarı bulunamadı! Lütfen Secrets ayarlayın veya manuel girin.")
     
     st.divider()
     app_mode = st.radio("Uygulama Modu", ["🗣️ Canlı Sohbet & Sesli Pratik", "🎴 Kelime Kartları (Flashcards)"])
@@ -88,7 +103,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
 
         st.markdown("---")
         
-        # Girdi Yöntemi Seçimi (Ses veya Metin çakışmasını önlemek için)
+        # Girdi Yöntemi Seçimi
         input_method = st.radio("Girdi Yöntemi Seçin:", ["⌨️ Yazı Yazarak", "🎙️ Sesli Konuşarak (Mikrofon)"], horizontal=True)
         
         user_text = ""
@@ -117,7 +132,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                     except Exception as e:
                         st.error(f"Groq Whisper Hatası: {e}")
 
-        # Eğer metin veya mikrofondan çevrilen yazı elde edildiyse işleme al
+        # Eğer yeni bir kullanıcı girdisi varsa, hemen işleme al ve yanıt üret
         if user_text:
             st.session_state.messages.append({"role": "user", "content": user_text})
             with st.chat_message("user"):
@@ -139,11 +154,16 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         st.session_state.messages.append({"role": "assistant", "content": ai_response})
 
                         # gTTS ile Seslendirme
-                        tts = gTTS(text=ai_response, lang='en')
-                        audio_fp = io.BytesIO()
-                        tts.write_to_fp(audio_fp)
-                        audio_fp.seek(0)
-                        st.audio(audio_fp, format="audio/mp3")
+                        try:
+                            tts = gTTS(text=ai_response, lang='en')
+                            audio_fp = io.BytesIO()
+                            tts.write_to_fp(audio_fp)
+                            audio_fp.seek(0)
+                            st.audio(audio_fp, format="audio/mp3", autoplay=True)
+                        except Exception as tts_err:
+                            st.warning(f"Seslendirme oluşturulamadı: {tts_err}")
+            else:
+                st.error("Groq API anahtarı eksik olduğu için asistan yanıt veremiyor.")
 
     # Sağ Kolon: Gemini ile Gramer ve Kelime Analizi
     with col_feedback:
@@ -167,7 +187,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         Keep it short and encouraging.
                         """
                         response = gemini_client.models.generate_content(
-                            model='gemini-2.5-flash',
+                            model='gemini-3.6-flash',
                             contents=analysis_prompt,
                         )
                         st.info(response.text)
