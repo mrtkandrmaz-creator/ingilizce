@@ -119,6 +119,29 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
     if not groq_client:
         st.error("🚨 Groq API anahtarı bulunamadı! Lütfen sol menüden anahtarınızı girin.")
 
+    # Özel CSS ile Modern ve Büyük Mikrofon Buton Tasarımı
+    st.markdown("""
+    <style>
+    div[data-testid="stAudioInput"] {
+        background-color: #1E1E1E;
+        border: 2px dashed #4CAF50;
+        border-radius: 12px;
+        padding: 15px;
+        text-align: center;
+        margin-top: 10px;
+        margin-bottom: 20px;
+    }
+    div[data-testid="stAudioInput"] button {
+        background-color: #4CAF50 !important;
+        color: white !important;
+        font-size: 18px !important;
+        font-weight: bold !important;
+        border-radius: 8px !important;
+        padding: 10px 20px !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     # Geçmiş Mesajları Göster
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
@@ -128,16 +151,12 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
     
     user_text = ""
 
-    # Asistanın son cevabından sonra hemen konuşma / sesli yanıt verme alanı
-    st.markdown("""
-    <div style="background-color: #1E1E1E; padding: 12px; border-radius: 8px; border: 1px solid #333; margin-bottom: 10px;">
-        <p style="color: #4CAF50; font-weight: bold; margin-bottom: 3px;">🎙️ Sesli Yanıt Ver (Mikrofon)</p>
-        <span style="color: #aaa; font-size: 13px;">Yapay zekanın cevabından hemen sonra konuşmak için alttaki butona tıklayın:</span>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Mikrofon Butonu
-    audio_file_input = st.audio_input("🎤 Konuşmaya Başla")
+    # Yapay Zeka Cevabından Sonra Hemen Görünen Modern Mikrofon Alanı
+    st.markdown("### 🎙️ Konuşmaya Devam Et")
+    st.caption("Yapay zekanın yanıtından hemen sonra sesli yanıt vermek için aşağıdaki büyük mikrofona tıklayın:")
+    
+    # Büyük ve Modern Mikrofon Girişi
+    audio_file_input = st.audio_input("🎤 Sesli Yanıt Gönder")
 
     # Alternatif Metin Girişi
     with st.expander("⌨️ Veya Metin Yazarak Devam Et"):
