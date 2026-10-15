@@ -1,6 +1,7 @@
 import os
 import io
 import json
+import time
 import streamlit as st
 from groq import Groq
 from google import genai
@@ -79,7 +80,7 @@ with st.sidebar:
         if manual_groq: groq_api_key = manual_groq
         if manual_gemini: gemini_api_key = manual_gemini
 
-    st.write(f"**Motor:** {'⚡ Groq Şimşek Hızı' if groq_api_key else '💎 Gemini Mod'}")
+    st.write(f"**Öncelikli Motor:** {'⚡ Groq (Yedek: Gemini)' if groq_api_key else '💎 Gemini Mod'}")
     
     st.divider()
     app_mode = st.radio("Mod Seçimi", ["🗣️ Canlı Sesli Sohbet", "🎴 Kelime Kartları"])
@@ -94,7 +95,7 @@ system_prompt = f"You are Sarah, a friendly and warm female English AI teacher (
 
 
 # ==============================================================================
-# MOD 1: CANLI SESLİ & YAZILI SOHBET (AKIŞSAL MİKROFON)
+# MOD 1: CANLI SESLİ & YAZILI SOHBET (AKIŞSAL MİKROFON + HATA TOLERANSLI)
 # ==============================================================================
 if app_mode == "🗣️ Canlı Sesli Sohbet":
     
@@ -102,12 +103,12 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
     col_avatar, col_info = st.columns([1, 5])
     with col_avatar:
         st.image(
-            "https://encrypted-tbn0.gstatic.com/licensed-image?q=tbn:ANd9GcQaWGvl8gGreJdNp1fy2Nj5NdWiUdFk4bOGeGvgAlZIIpEvY5kkFOoNIG19cUJhye06V1VKgG5QkMaSUSU", 
+            "https://static.vecteezy.com/system/resources/previews/060/362/634/non_2x/cartoon-female-teacher-avatar-with-glasses-isolated-in-a-bright-friendly-setting-3d-cartoon-female-teacher-educator-avatar-isolated-on-transparent-background-free-png.png", 
             width=100
         )
     with col_info:
         st.markdown("### Sarah (AI English Teacher)")
-        st.caption("Sarah ile sesli veya yazılı olarak pratik yapın. Her yanıt sonrasında mikrofon akışı otomatik olarak altta aktifleşir.")
+        st.caption("Sarah ile sesli veya yazılı olarak pratik yapın. Sunucu yoğunluğu yaşandığında sistem otomatik olarak yedek motora geçer.")
 
     st.divider()
 
@@ -119,7 +120,7 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
 
     user_query = ""
 
-    # SOHBET AKIŞININ DEVAMINDA SES KAYIT VE METİN GİRİŞİ (AKIŞSAL MİKROFON)
+    # SOHBET AKIŞININ DEVAMINDA SES KAYIT VE METİN GİRİŞİ
     st.markdown("---")
     st.markdown("🎙️ **Cevabınızı sesli kaydedin veya yazın:**")
     
@@ -142,7 +143,7 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
                     )
                     user_query = transcription.strip()
                 except Exception as e:
-                    st.error(f"Ses algılama hatası: {e}")
+                    st.warning(f"Groq Whisper yoğunluk yaşadı, alternatif işleniyor... ({e})")
 
     with col_txt:
         text_query = st.chat_input("Veya buraya yazıp gönderin...")
@@ -163,21 +164,23 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
                 messages_payload = [{"role": "system", "content": system_prompt}]
                 messages_payload.extend([{"role": m["role"], "content": m["content"]} for m in st.session_state.messages])
 
-                # 1. Groq Hızlı Model
+                # 1. ÖNCE GROQ DENEMESİ (503 VE YOĞUNLUK HATA TOLERANSLI)
                 if groq_client and not success:
-                    try:
-                        completion = groq_client.chat.completions.create(
-                            model="llama-3.1-8b-instant",
-                            messages=messages_payload,
-                            temperature=0.7,
-                            max_tokens=300
-                        )
-                        ai_response = completion.choices[0].message.content
-                        success = True
-                    except Exception:
-                        pass
+                    for attempt in range(2):  # 503 alması durumunda 1 kere kısa bekleme ile tekrar dener
+                        try:
+                            completion = groq_client.chat.completions.create(
+                                model="llama-3.1-8b-instant",
+                                messages=messages_payload,
+                                temperature=0.7,
+                                max_tokens=300
+                            )
+                            ai_response = completion.choices[0].message.content
+                            success = True
+                            break
+                        except Exception as e:
+                            time.sleep(0.5)
 
-                # 2. Gemini Yedek Model
+                # 2. GROQ 503/BAĞLANTI HATASI VERİRSE OTOMATİK GEMINI DEVREYE GİRER
                 if gemini_client and not success:
                     try:
                         chat_history_str = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.messages])
@@ -188,7 +191,7 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
                         ai_response = res.text
                         success = True
                     except Exception as e:
-                        ai_response = f"Bağlantı kurulamadı: {e}"
+                        st.error(f"Yapay zeka servisleri geçici olarak yoğun. Lütfen tekrar deneyin: {e}")
 
                 if ai_response:
                     st.markdown(ai_response)
@@ -204,7 +207,6 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
                     except Exception:
                         pass
                     
-                    # Sayfayı yenileyerek yeni mesajın hemen üstüne mikrofonu konumlandır
                     st.rerun()
 
 
