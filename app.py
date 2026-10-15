@@ -81,42 +81,43 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
     with col_chat:
         st.subheader("💬 Sohbet Ekranı")
         
+        # Geçmiş Mesajları Göster
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.write(msg["content"])
 
         st.markdown("---")
-        st.write("🎙️ **Sesli Mesaj Gönder:**")
         
-        # Streamlit yerleşik ses kayıt bileşeni (Tarayıcı mikrofonu ile tam uyumlu)
-        audio_file_input = st.audio_input("Mikrofonu kullanmak için kayıt tuşuna basın")
+        # Girdi Yöntemi Seçimi (Ses veya Metin çakışmasını önlemek için)
+        input_method = st.radio("Girdi Yöntemi Seçin:", ["⌨️ Yazı Yazarak", "🎙️ Sesli Konuşarak (Mikrofon)"], horizontal=True)
         
-        text_input = st.chat_input("Veya buraya İngilizce yazın...")
         user_text = ""
 
-        # 1. SES DOSYASI -> GROQ WHISPER STT
-        if audio_file_input is not None and groq_client:
-            with st.spinner("Sesiniz Groq Whisper ile metne dönüştürülüyor..."):
-                try:
-                    # Ses verisini byte formatından oku
-                    audio_bytes = audio_file_input.getvalue()
-                    audio_io = io.BytesIO(audio_bytes)
-                    audio_io.name = "audio.wav"
+        if input_method == "⌨️ Yazı Yazarak":
+            user_text = st.chat_input("İngilizce mesajınızı yazın ve enter tuşuna basın...")
+            
+        else:
+            st.write("🎙️ **Mikrofona konuşun ve kaydı tamamlayın:**")
+            audio_file_input = st.audio_input("Ses kaydetmek için tıklayın")
+            
+            if audio_file_input is not None and groq_client:
+                with st.spinner("Sesiniz Groq Whisper ile metne dönüştürülüyor..."):
+                    try:
+                        audio_bytes = audio_file_input.getvalue()
+                        audio_io = io.BytesIO(audio_bytes)
+                        audio_io.name = "audio.wav"
 
-                    transcription = groq_client.audio.transcriptions.create(
-                        file=(audio_io.name, audio_io.read()),
-                        model="whisper-large-v3",
-                        response_format="text",
-                        language="en"
-                    )
-                    user_text = transcription.strip()
-                except Exception as e:
-                    st.error(f"Groq Whisper Hatası: {e}")
+                        transcription = groq_client.audio.transcriptions.create(
+                            file=(audio_io.name, audio_io.read()),
+                            model="whisper-large-v3",
+                            response_format="text",
+                            language="en"
+                        )
+                        user_text = transcription.strip()
+                    except Exception as e:
+                        st.error(f"Groq Whisper Hatası: {e}")
 
-        elif text_input:
-            user_text = text_input
-
-        # 2. MESAJ İŞLEME VE SOHBET AKIŞI
+        # Eğer metin veya mikrofondan çevrilen yazı elde edildiyse işleme al
         if user_text:
             st.session_state.messages.append({"role": "user", "content": user_text})
             with st.chat_message("user"):
