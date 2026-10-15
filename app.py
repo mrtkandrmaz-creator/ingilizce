@@ -41,17 +41,24 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- STREAMLIT SECRETS (TOML) ÜZERİNDEN ÇOKLU API ANAHTARI YÖNETİMİ ---
+# --- STREAMLIT SECRETS (TOML) GÜVENLİ OKUMA ---
 def parse_secret_keys(secret_value):
     if not secret_value:
         return []
     if isinstance(secret_value, list):
-        return secret_value
-    # Virgül veya alt alta yazılmış anahtarları listeye dönüştür
+        return [str(k).strip() for k in secret_value if str(k).strip()]
     return [k.strip() for k in str(secret_value).replace(",", "\n").split("\n") if k.strip()]
 
-groq_keys = parse_secret_keys(st.secrets.get("GROQ_API_KEY", ""))
-gemini_keys = parse_secret_keys(st.secrets.get("GEMINI_API_KEY", ""))
+groq_keys = []
+gemini_keys = []
+
+try:
+    if "GROQ_API_KEY" in st.secrets:
+        groq_keys = parse_secret_keys(st.secrets["GROQ_API_KEY"])
+    if "GEMINI_API_KEY" in st.secrets:
+        gemini_keys = parse_secret_keys(st.secrets["GEMINI_API_KEY"])
+except Exception as e:
+    st.sidebar.error(f"Secrets okunamadı: {e}")
 
 # --- OTURUM DURUMLARI (SESSION STATE) ---
 if "messages" not in st.session_state:
@@ -68,7 +75,7 @@ if "flashcards" not in st.session_state:
 if "card_index" not in st.session_state:
     st.session_state.card_index = 0
 
-# --- SIDEBAR (SADELEŞTİRİLMİŞ KONTROL PANELİ) ---
+# --- SIDEBAR (KONTROL PANELİ) ---
 with st.sidebar:
     st.title("⚙️ Kontrol Paneli")
     
@@ -87,7 +94,6 @@ system_prompt = f"You are Sarah, a friendly and warm female English AI teacher (
 # HİBRİT VE ÇOKLU ANAHTARLI YANIT / SES FONKSİYONLARI
 # ==============================================================================
 def get_ai_response(messages_payload):
-    # 1. Önce Groq anahtarlarını sırayla dene
     for g_key in groq_keys:
         try:
             client = Groq(api_key=g_key)
@@ -101,7 +107,6 @@ def get_ai_response(messages_payload):
         except Exception:
             continue
 
-    # 2. Groq yanıt vermezse Gemini anahtarlarını sırayla dene
     chat_history_str = "\n".join([f"{m['role']}: {m['content']}" for m in messages_payload if m['role'] != 'system'])
     for gem_key in gemini_keys:
         try:
@@ -200,7 +205,6 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
                     st.markdown(ai_response)
                     st.session_state.messages.append({"role": "assistant", "content": ai_response})
 
-                    # Otomatik Seslendirme (Autoplay)
                     try:
                         tts = gTTS(text=ai_response, lang='en', slow=False)
                         audio_fp = io.BytesIO()
