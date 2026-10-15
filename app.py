@@ -121,7 +121,7 @@ if app_mode == "🗣️ Canlı Sohbet & Pratik":
                             gemini_full_prompt = f"{system_prompt}\n\nChat History:\n{chat_history_str}\n\nRespond as the teacher:"
                             
                             res = gemini_client.models.generate_content(
-                                model='gemini-2.5-flash',
+                                model='gemini-3.6-flash',
                                 contents=gemini_full_prompt
                             )
                             ai_response = res.text
