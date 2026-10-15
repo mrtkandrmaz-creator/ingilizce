@@ -153,7 +153,7 @@ if app_mode == "🗣️ Canlı Otomatik Sesli Sohbet":
                     try:
                         chat_history_str = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.messages])
                         res = gemini_client.models.generate_content(
-                            model='gemini-2.5-flash',
+                            model='gemini-3.6-flash',
                             contents=f"{system_prompt}\n\n{chat_history_str}"
                         )
                         ai_response = res.text
