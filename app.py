@@ -116,7 +116,7 @@ def get_ai_response(messages_payload):
         except Exception:
             continue
 
-    # 2. Groq yanıt vermezse Gemini 1.5 Flash ile devam et
+    # 2. Groq yanıt vermezse Gemini 3.6 Flash ile devam et
     chat_history_str = "\n".join([f"{m['role']}: {m['content']}" for m in messages_payload if m['role'] != 'system'])
     for gem_key in gemini_keys:
         try:
