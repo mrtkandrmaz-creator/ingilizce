@@ -13,7 +13,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- GÜVENLİ API ANAHTARI YÖNETİMİ ---
+# --- GÜVENLİ STREAMLIT SECRETS OKUMA ---
 groq_api_key = ""
 gemini_api_key = ""
 
@@ -23,7 +23,8 @@ try:
     if "GEMINI_API_KEY" in st.secrets:
         gemini_api_key = st.secrets["GEMINI_API_KEY"]
 except Exception as e:
-    st.sidebar.error(f"Secrets okuma hatası: {e}")
+    # Yerelde secrets.toml dosyası yoksa veya okunamazsa bu blok çalışır
+    pass
 
 # --- OTURUM DURUMLARI (SESSION STATE) ---
 if "messages" not in st.session_state:
@@ -41,13 +42,13 @@ if "card_index" not in st.session_state:
 if "show_meaning" not in st.session_state:
     st.session_state.show_meaning = False
 
-# --- SIDEBAR (AYARLAR VE DURUM KONTROLÜ) ---
+# --- SIDEBAR (KONTROL PANELİ VE GÜVENLİK KONTROLÜ) ---
 with st.sidebar:
     st.title("⚙️ Kontrol Paneli")
     
-    # Manuel anahtar girişi (Eğer secrets çalışmazsa buradan test edebilirsiniz)
-    manual_groq = st.text_input("Groq API Key (Override)", type="password", value="")
-    manual_gemini = st.text_input("Gemini API Key (Override)", type="password", value="")
+    # Eğer Secrets'tan okunamazsa veya test etmek isterseniz manuel giriş alanı
+    manual_groq = st.text_input("Groq API Key (Yedek)", type="password", value="")
+    manual_gemini = st.text_input("Gemini API Key (Yedek)", type="password", value="")
     
     if manual_groq:
         groq_api_key = manual_groq
@@ -55,16 +56,15 @@ with st.sidebar:
         gemini_api_key = manual_gemini
 
     st.divider()
-    st.write("**API Bağlantı Durumu:**")
-    st.write(f"Groq API Key: {'✅ Var' if groq_api_key else '❌ Yok/Bulunamadı'}")
-    st.write(f"Gemini API Key: {'✅ Var' if gemini_api_key else '❌ Yok/Bulunamadı'}")
+    st.write("**Hibrit Bağlantı Durumu:**")
+    st.write(f"Groq API: {'✅ Aktif' _if groq_api_key else '❌ Bulunamadı'}")
+    st.write(f"Gemini API: {'✅ Aktif' _if gemini_api_key else '❌ Bulunamadı'}")
     
     st.divider()
     app_mode = st.radio("Uygulama Modu", ["🗣️ Canlı Sohbet & Pratik", "🎴 Kelime Kartları"])
-    
     selected_level = st.selectbox("Seviyeniz", ["Beginner (A1-A2)", "Intermediate (B1-B2)", "Advanced (C1-C2)"])
 
-# --- CLIENT'LARI BAŞLATMA ---
+# --- İSTEMCİLERİ BAŞLATMA ---
 groq_client = Groq(api_key=groq_api_key) if groq_api_key else None
 gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key else None
 
@@ -73,31 +73,30 @@ system_prompt = f"You are a helpful and friendly English AI teacher for a {selec
 
 
 # ==============================================================================
-# MOD 1: CANLI SOHBET
+# MOD 1: CANLI SOHBET & HİBRİT ANALİZ
 # ==============================================================================
 if app_mode == "🗣️ Canlı Sohbet & Pratik":
-    st.title("🗣️ LearnAI: Canlı İngilizce Pratik")
+    st.title("🗣️ LearnAI: Canlı İngilizce Pratik (Groq + Gemini Hibrit)")
 
-    # Geçmiş Mesajları Ekranda Listele
+    # Geçmiş Mesajlar
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    # Streamlit'in yerleşik ve en kararlı chat girdisi
     user_query = st.chat_input("İngilizce mesajınızı yazın...")
 
     if user_query:
         if not groq_client:
-            st.error("Groq API anahtarı tanımlı değil! Lütfen sol menüden kontrol edin veya secrets.toml dosyanızı gözden geçirin.")
+            st.error("Groq API anahtarı bulunamadı! Lütfen secrets.toml dosyanızı veya sol menüyü kontrol edin.")
         else:
-            # 1. Kullanıcı mesajını ekrana ekle ve kaydet
+            # 1. Kullanıcı mesajını kaydet
             st.session_state.messages.append({"role": "user", "content": user_query})
             with st.chat_message("user"):
                 st.markdown(user_query)
 
-            # 2. Groq Llama 3 ile yanıt üret
+            # 2. Groq Llama 3 ile Hızlı Yanıt
             with st.chat_message("assistant"):
-                with st.spinner("Yapay zeka düşünüyor..."):
+                with st.spinner("Groq yanıt hazırlıyor..."):
                     try:
                         messages_payload = [{"role": "system", "content": system_prompt}]
                         messages_payload.extend([{"role": m["role"], "content": m["content"]} for m in st.session_state.messages])
@@ -111,7 +110,7 @@ if app_mode == "🗣️ Canlı Sohbet & Pratik":
                         st.markdown(ai_response)
                         st.session_state.messages.append({"role": "assistant", "content": ai_response})
 
-                        # Sesli yanıt (gTTS)
+                        # Sesli Yanıt (gTTS)
                         tts = gTTS(text=ai_response, lang='en')
                         audio_fp = io.BytesIO()
                         tts.write_to_fp(audio_fp)
@@ -121,9 +120,22 @@ if app_mode == "🗣️ Canlı Sohbet & Pratik":
                     except Exception as e:
                         st.error(f"Groq API Hatası: {e}")
 
+            # 3. Hibrit Güç: Gemini ile Arka Planda Dil Bilgisi Analizi
+            if gemini_client:
+                with st.expander("🧐 Gemini Hibrit Gramer ve Kelime Koçu Analizi"):
+                    try:
+                        analysis_prompt = f"Analyze this sentence spoken by a student: '{user_query}'. Give brief Turkish feedback on grammar mistakes and better alternatives."
+                        res = gemini_client.models.generate_content(
+                            model='gemini-2.5-flash',
+                            contents=analysis_prompt
+                        )
+                        st.info(res.text)
+                    except Exception as e:
+                        st.warning(f"Gemini analizi alınamadı: {e}")
+
 
 # ==============================================================================
-# MOD 2: KELİME KARTLARI
+# MOD 2: KELİME KARTLARI (GEMİNİ DESTEKLİ)
 # ==============================================================================
 elif app_mode == "🎴 Kelime Kartları":
     st.title("🎴 Akıllı Kelime Kartları")
@@ -134,9 +146,9 @@ elif app_mode == "🎴 Kelime Kartları":
         current_card = cards[idx]
         st.info(f"**Kelime:** {current_card['word']} \n\n *Örnek:* {current_card['example']}")
         
-        if st.button("Anlamını Göster"):
+        if st.button("👁️ Anlamını Göster"):
             st.success(f"Anlamı: {current_card['meaning']}")
 
-        if st.button("Sonraki Kart"):
+        if st.button("Sonraki Kart ➡️"):
             st.session_state.card_index = (idx + 1) % len(cards)
             st.rerun()
