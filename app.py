@@ -13,25 +13,19 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- ESNEK VE GÜVENLİ API ANAHTARI YÖNETİMİ (Streamlit Secrets) ---
-def get_secret(key_names):
-    """Secrets.toml dosyasından farklı büyük/küçük harf kombinasyonlarını güvenle okur."""
-    for key in key_names:
+# --- GÜVENLİ API ANAHTARI YÖNETİMİ (Esnek Streamlit Secrets Okuyucu) ---
+def get_secret_key(possible_keys):
+    for key in possible_keys:
         try:
             val = st.secrets.get(key, "")
             if val:
                 return val
         except Exception:
             pass
-    # Alternatif olarak environment değişkenlerini de kontrol et
-    for key in key_names:
-        val = os.environ.get(key, "")
-        if val:
-            return val
     return ""
 
-default_groq_key = get_secret(["GROQ_API_KEY", "groq_api_key", "Groq_API_Key"])
-default_gemini_key = get_secret(["GEMINI_API_KEY", "gemini_api_key", "Gemini_API_Key"])
+default_groq_key = get_secret_key(["GROQ_API_KEY", "groq_api_key", "Groq_API_Key", "GROQ", "groq"])
+default_gemini_key = get_secret_key(["GEMINI_API_KEY", "gemini_api_key", "Gemini_API_Key", "GEMINI", "gemini", "GOOGLE_API_KEY", "google_api_key"])
 
 # --- OTURUM DURUMLARI (SESSION STATE) ---
 if "messages" not in st.session_state:
@@ -57,15 +51,21 @@ with st.sidebar:
     use_manual_keys = st.checkbox("Özel API Anahtarı Gir", value=False)
     
     if use_manual_keys:
-        groq_api_key = st.text_input("Groq API Key", type="password")
-        gemini_api_key = st.text_input("Gemini API Key", type="password")
+        groq_api_key = st.text_input("Groq API Key", type="password", value=default_groq_key)
+        gemini_api_key = st.text_input("Gemini API Key", type="password", value=default_gemini_key)
     else:
         groq_api_key = default_groq_key
         gemini_api_key = default_gemini_key
-        if groq_api_key or gemini_api_key:
-            st.success("🔒 API anahtarları otomatik algılandı.")
+        
+        if groq_api_key:
+            st.success("🔒 Groq API anahtarı Secrets'tan alındı.")
         else:
-            st.warning("⚠️ API anahtarı bulunamadı! Lütfen Secrets ayarlayın veya manuel girin.")
+            st.warning("⚠️ Groq API anahtarı secrets.toml içinde bulunamadı! Aşağıdan manuel girebilirsiniz.")
+            
+        if gemini_api_key:
+            st.success("🔒 Gemini API anahtarı Secrets'tan alındı.")
+        else:
+            st.warning("⚠️ Gemini API anahtarı secrets.toml içinde bulunamadı!")
     
     st.divider()
     app_mode = st.radio("Uygulama Modu", ["🗣️ Canlı Sohbet & Sesli Pratik", "🎴 Kelime Kartları (Flashcards)"])
@@ -90,6 +90,9 @@ Always answer in English, correct big mistakes gently, and end your response wit
 if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
     st.title("🗣️ LearnAI: Canlı İngilizce Pratik")
     st.caption("Groq Whisper (STT) + Groq Llama 3 (Hızlı Sohbet) + Gemini (Gramer Analizi) + gTTS (TTS)")
+
+    if not groq_api_key:
+        st.error("🚨 Groq API anahtarı tanımlı değil! Lütfen sol menüden anahtarınızı girin veya Streamlit secrets ayarlarınızı kontrol edin.")
 
     col_chat, col_feedback = st.columns([2, 1])
 
@@ -132,7 +135,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                     except Exception as e:
                         st.error(f"Groq Whisper Hatası: {e}")
 
-        # Eğer yeni bir kullanıcı girdisi varsa, hemen işleme al ve yanıt üret
+        # Eğer metin veya mikrofondan çevrilen yazı elde edildiyse işleme al
         if user_text:
             st.session_state.messages.append({"role": "user", "content": user_text})
             with st.chat_message("user"):
@@ -144,12 +147,25 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         messages_payload = [{"role": "system", "content": system_prompt}]
                         messages_payload.extend([{"role": m["role"], "content": m["content"]} for m in st.session_state.messages])
 
-                        completion = groq_client.chat.completions.create(
-                            model="llama3-70b-8192",
-                            messages=messages_payload,
-                            temperature=0.7
-                        )
-                        ai_response = completion.choices[0].message.content
+                        try:
+                            completion = groq_client.chat.completions.create(
+                                model="llama-3.3-70b-versatile",
+                                messages=messages_payload,
+                                temperature=0.7
+                            )
+                            ai_response = completion.choices[0].message.content
+                        except Exception as e:
+                            # Model uyumsuzluklarına karşı alternatif model fallback denemesi
+                            try:
+                                completion = groq_client.chat.completions.create(
+                                    model="llama3-70b-8192",
+                                    messages=messages_payload,
+                                    temperature=0.7
+                                )
+                                ai_response = completion.choices[0].message.content
+                            except Exception as e2:
+                                ai_response = f"Groq API Hatası: {e2}"
+
                         st.write(ai_response)
                         st.session_state.messages.append({"role": "assistant", "content": ai_response})
 
@@ -159,11 +175,9 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                             audio_fp = io.BytesIO()
                             tts.write_to_fp(audio_fp)
                             audio_fp.seek(0)
-                            st.audio(audio_fp, format="audio/mp3", autoplay=True)
+                            st.audio(audio_fp, format="audio/mp3")
                         except Exception as tts_err:
-                            st.warning(f"Seslendirme oluşturulamadı: {tts_err}")
-            else:
-                st.error("Groq API anahtarı eksik olduğu için asistan yanıt veremiyor.")
+                            st.warning(f"Ses sentezleme uyarısı: {tts_err}")
 
     # Sağ Kolon: Gemini ile Gramer ve Kelime Analizi
     with col_feedback:
@@ -198,7 +212,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
 
 
 # ==============================================================================
-# MOD 2: INTERAKTİF KELİME KARTLARI (FLASHCARDS)
+# MOD 2: İNTERAKTİF KELİME KARTLARI (FLASHCARDS)
 # ==============================================================================
 elif app_mode == "🎴 Kelime Kartları (Flashcards)":
     st.title("🎴 Akıllı Kelime Kartları")
