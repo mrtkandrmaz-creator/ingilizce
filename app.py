@@ -23,7 +23,6 @@ try:
     if "GEMINI_API_KEY" in st.secrets:
         gemini_api_key = st.secrets["GEMINI_API_KEY"]
 except Exception as e:
-    # Yerelde secrets.toml dosyası yoksa veya okunamazsa bu blok çalışır
     pass
 
 # --- OTURUM DURUMLARI (SESSION STATE) ---
@@ -46,7 +45,6 @@ if "show_meaning" not in st.session_state:
 with st.sidebar:
     st.title("⚙️ Kontrol Paneli")
     
-    # Eğer Secrets'tan okunamazsa veya test etmek isterseniz manuel giriş alanı
     manual_groq = st.text_input("Groq API Key (Yedek)", type="password", value="")
     manual_gemini = st.text_input("Gemini API Key (Yedek)", type="password", value="")
     
@@ -57,8 +55,9 @@ with st.sidebar:
 
     st.divider()
     st.write("**Hibrit Bağlantı Durumu:**")
-    st.write(f"Groq API: {'✅ Aktif' _if groq_api_key else '❌ Bulunamadı'}")
-    st.write(f"Gemini API: {'✅ Aktif' _if gemini_api_key else '❌ Bulunamadı'}")
+    # DÜZELTME: _if yerine doğru olan 'if' ifadesi kullanıldı
+    st.write(f"Groq API: {'✅ Aktif' if groq_api_key else '❌ Bulunamadı'}")
+    st.write(f"Gemini API: {'✅ Aktif' if gemini_api_key else '❌ Bulunamadı'}")
     
     st.divider()
     app_mode = st.radio("Uygulama Modu", ["🗣️ Canlı Sohbet & Pratik", "🎴 Kelime Kartları"])
@@ -78,7 +77,6 @@ system_prompt = f"You are a helpful and friendly English AI teacher for a {selec
 if app_mode == "🗣️ Canlı Sohbet & Pratik":
     st.title("🗣️ LearnAI: Canlı İngilizce Pratik (Groq + Gemini Hibrit)")
 
-    # Geçmiş Mesajlar
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
@@ -89,12 +87,10 @@ if app_mode == "🗣️ Canlı Sohbet & Pratik":
         if not groq_client:
             st.error("Groq API anahtarı bulunamadı! Lütfen secrets.toml dosyanızı veya sol menüyü kontrol edin.")
         else:
-            # 1. Kullanıcı mesajını kaydet
             st.session_state.messages.append({"role": "user", "content": user_query})
             with st.chat_message("user"):
                 st.markdown(user_query)
 
-            # 2. Groq Llama 3 ile Hızlı Yanıt
             with st.chat_message("assistant"):
                 with st.spinner("Groq yanıt hazırlıyor..."):
                     try:
@@ -110,7 +106,6 @@ if app_mode == "🗣️ Canlı Sohbet & Pratik":
                         st.markdown(ai_response)
                         st.session_state.messages.append({"role": "assistant", "content": ai_response})
 
-                        # Sesli Yanıt (gTTS)
                         tts = gTTS(text=ai_response, lang='en')
                         audio_fp = io.BytesIO()
                         tts.write_to_fp(audio_fp)
@@ -120,7 +115,6 @@ if app_mode == "🗣️ Canlı Sohbet & Pratik":
                     except Exception as e:
                         st.error(f"Groq API Hatası: {e}")
 
-            # 3. Hibrit Güç: Gemini ile Arka Planda Dil Bilgisi Analizi
             if gemini_client:
                 with st.expander("🧐 Gemini Hibrit Gramer ve Kelime Koçu Analizi"):
                     try:
@@ -135,7 +129,7 @@ if app_mode == "🗣️ Canlı Sohbet & Pratik":
 
 
 # ==============================================================================
-# MOD 2: KELİME KARTLARI (GEMİNİ DESTEKLİ)
+# MOD 2: KELİME KARTLARI
 # ==============================================================================
 elif app_mode == "🎴 Kelime Kartları":
     st.title("🎴 Akıllı Kelime Kartları")
