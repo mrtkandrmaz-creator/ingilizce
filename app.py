@@ -103,7 +103,7 @@ with st.sidebar:
 groq_client = Groq(api_key=groq_api_key) if groq_api_key else None
 gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key else None
 
-# Sıkılaştırılmış ve konudan sapmayı önleyen Sistem Promptu
+# Sistem Promptu
 system_prompt = f"""You are a helpful and friendly English AI teacher ({teacher_persona}) for a {selected_level} student. 
 CRITICAL RULE: Always stay strictly focused on the user's input, answer their specific question directly, and do not wander off to unrelated topics. 
 Always answer in English, correct big mistakes gently, and keep the conversation relevant to what the user just said."""
@@ -149,7 +149,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
         st.info("👋 İngilizce pratik yapmak için aşağıdaki mikrofona tıklayarak konuşmaya başlayın!")
         audio_file_input = st.audio_input("🎤 Konuşmaya Başla")
         if audio_file_input is not None and groq_client:
-            with st.spinner("Sesiniz işleniyor..."):
+            with st.spinner("Sesiniz metne dönüştürülüyor..."):
                 try:
                     audio_bytes = audio_file_input.getvalue()
                     audio_io = io.BytesIO(audio_bytes)
@@ -168,16 +168,18 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
     for i, msg in enumerate(st.session_state.messages):
         with st.chat_message(msg["role"]):
             st.write(msg["content"])
+            # Eğer asistan mesajı ise ve ses dosyası oturumda saklandıysa ses oynatıcıyı hemen altına ekle
+            if msg["role"] == "assistant" and "audio_bytes" in msg:
+                st.audio(msg["audio_bytes"], format="audio/mp3")
         
         # Eğer mesaj bir assistant (yapay zeka) mesajı ise, hemen altına mikrofon koyalım
         if msg["role"] == "assistant":
-            # Son asistan mesajı mı kontrolü
             if i == len(st.session_state.messages) - 1:
                 st.markdown("👇 **Sesli yanıt vermek için mikrofona tıklayın:**")
                 audio_file_input = st.audio_input(f"🎤 Sesli Yanıt Ver (Cevap #{i})")
                 
                 if audio_file_input is not None and groq_client:
-                    with st.spinner("Sesiniz işleniyor..."):
+                    with st.spinner("Sesiniz metne dönüştürülüyor..."):
                         try:
                             audio_bytes = audio_file_input.getvalue()
                             audio_io = io.BytesIO(audio_bytes)
@@ -198,8 +200,9 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
     if text_input_val:
         user_text = text_input_val
 
-    # Kullanıcıdan girdi alındıysa işleme koy ve yanıt üret
+    # Kullanıcıdan girdi alındıysa ekrana yaz ve yanıt üret
     if user_text:
+        # Önce kullanıcı mesajını ekrana (chat_message ile You olarak) ekle
         st.session_state.messages.append({"role": "user", "content": user_text})
         with st.chat_message("user"):
             st.write(user_text)
@@ -229,17 +232,26 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                             ai_response = f"Groq API Hatası: {e2}"
 
                     st.write(ai_response)
-                    st.session_state.messages.append({"role": "assistant", "content": ai_response})
 
-                    # gTTS ile Seslendirme (Otomatik sesli cevap için autoplay=True)
+                    # gTTS ile Seslendirme (Kullanıcının çal tuşuna basabilmesi için kalıcı byte verisi)
                     try:
                         tts = gTTS(text=ai_response, lang='en')
                         audio_fp = io.BytesIO()
                         tts.write_to_fp(audio_fp)
                         audio_fp.seek(0)
-                        st.audio(audio_fp, format="audio/mp3", autoplay=True)
+                        audio_bytes_data = audio_fp.read()
+                        
+                        st.audio(audio_bytes_data, format="audio/mp3")
+                        
+                        # Asistan mesajını ve ses verisini oturuma kaydet
+                        st.session_state.messages.append({
+                            "role": "assistant", 
+                            "content": ai_response,
+                            "audio_bytes": audio_bytes_data
+                        })
                     except Exception as tts_err:
                         st.warning(f"Ses sentezleme uyarısı: {tts_err}")
+                        st.session_state.messages.append({"role": "assistant", "content": ai_response})
                 
                 # Sayfayı yenileyerek yeni asistan mesajının altında mikrofonun hemen belirmesini sağla
                 st.rerun()
