@@ -1,7 +1,6 @@
 import os
 import io
 import json
-import time
 import streamlit as st
 from groq import Groq
 from google import genai
@@ -9,7 +8,7 @@ from gtts import gTTS
 
 # --- SAYFA YAPILANDIRMASI ---
 st.set_page_config(
-    page_title="LearnAI - Çoklu API Destekli Sesli İngilizce Asistanı", 
+    page_title="LearnAI - Sesli İngilizce Asistanı", 
     page_icon="✨", 
     layout="wide"
 )
@@ -42,19 +41,17 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- ÇOKLU API ANAHTARI YÖNETİMİ ---
-# secrets.toml içinde virgülle ayrılmış birden fazla anahtar desteklenir. Örn: GROQ_API_KEY = "gsk_1..., gsk_2..."
-def parse_keys(secret_value, manual_value):
-    if manual_value:
-        return [k.strip() for k in manual_value.replace(",", "\n").split("\n") if k.strip()]
-    if secret_value:
-        if isinstance(secret_value, list):
-            return secret_value
-        return [k.strip() for k in str(secret_value).replace(",", "\n").split("\n") if k.strip()]
-    return []
+# --- STREAMLIT SECRETS (TOML) ÜZERİNDEN ÇOKLU API ANAHTARI YÖNETİMİ ---
+def parse_secret_keys(secret_value):
+    if not secret_value:
+        return []
+    if isinstance(secret_value, list):
+        return secret_value
+    # Virgül veya alt alta yazılmış anahtarları listeye dönüştür
+    return [k.strip() for k in str(secret_value).replace(",", "\n").split("\n") if k.strip()]
 
-raw_groq_secret = st.secrets.get("GROQ_API_KEY", "") if "GROQ_API_KEY" in st.secrets else ""
-raw_gemini_secret = st.secrets.get("GEMINI_API_KEY", "") if "GEMINI_API_KEY" in st.secrets else ""
+groq_keys = parse_secret_keys(st.secrets.get("GROQ_API_KEY", ""))
+gemini_keys = parse_secret_keys(st.secrets.get("GEMINI_API_KEY", ""))
 
 # --- OTURUM DURUMLARI (SESSION STATE) ---
 if "messages" not in st.session_state:
@@ -64,27 +61,19 @@ if "messages" not in st.session_state:
 
 if "flashcards" not in st.session_state:
     st.session_state.flashcards = [
-        {"word": "Resilient", "meaning": "Dayanıklı, dirençli", "example": "You must be resilient when learning a new language."},
-        {"word": "Multitask", "meaning": "Aynı anda birden fazla iş yapmak", "example": "Our system handles multiple API keys effortlessly."}
+        {"word": "Secure", "meaning": "Güvenli", "example": "API keys are securely stored in secrets."},
+        {"word": "Seamless", "meaning": "Kusursuz, akıcı", "example": "We have a seamless conversation."}
     ]
 
 if "card_index" not in st.session_state:
     st.session_state.card_index = 0
 
-# --- SIDEBAR (KONTROL PANELİ VE ÇOKLU ANAHTAR GİRİŞİ) ---
+# --- SIDEBAR (SADELEŞTİRİLMİŞ KONTROL PANELİ) ---
 with st.sidebar:
     st.title("⚙️ Kontrol Paneli")
     
-    with st.expander("🔑 Çoklu API Anahtarları (Gizli Ayar)"):
-        st.caption("Birden fazla anahtarı virgülle veya alt alta yazabilirsiniz.")
-        manual_groq = st.text_area("Groq API Key(ler)", value="", placeholder="gsk_key1, gsk_key2")
-        manual_gemini = st.text_area("Gemini API Key(ler)", value="", placeholder="AIza_key1, AIza_key2")
-
-    groq_keys = parse_keys(raw_groq_secret, manual_groq)
-    gemini_keys = parse_keys(raw_gemini_secret, manual_gemini)
-
-    st.write(f"**Yüklü Groq Key Sayısı:** {len(groq_keys)}")
-    st.write(f"**Yüklü Gemini Key Sayısı:** {len(gemini_keys)}")
+    st.write(f"**Yüklü Groq Key:** {len(groq_keys)} adet")
+    st.write(f"**Yüklü Gemini Key:** {len(gemini_keys)} adet")
     
     st.divider()
     app_mode = st.radio("Mod Seçimi", ["🗣️ Canlı Sesli Sohbet", "🎴 Kelime Kartları"])
@@ -95,10 +84,10 @@ system_prompt = f"You are Sarah, a friendly and warm female English AI teacher (
 
 
 # ==============================================================================
-# AKILLI ÇOKLU API DÖNGÜSÜ İLE YANIT ÜRETME FONKSİYONLARI
+# HİBRİT VE ÇOKLU ANAHTARLI YANIT / SES FONKSİYONLARI
 # ==============================================================================
 def get_ai_response(messages_payload):
-    # 1. Önce GROQ anahtarlarını sırayla dene
+    # 1. Önce Groq anahtarlarını sırayla dene
     for g_key in groq_keys:
         try:
             client = Groq(api_key=g_key)
@@ -108,11 +97,11 @@ def get_ai_response(messages_payload):
                 temperature=0.7,
                 max_tokens=300
             )
-            return completion.choices[0].message.content, "Groq"
+            return completion.choices[0].message.content
         except Exception:
-            continue # Hata alrsa sonraki Groq anahtarına geç
+            continue
 
-    # 2. Groq'lar bittiyse veya hata verdiyse GEMINI anahtarlarını sırayla dene
+    # 2. Groq yanıt vermezse Gemini anahtarlarını sırayla dene
     chat_history_str = "\n".join([f"{m['role']}: {m['content']}" for m in messages_payload if m['role'] != 'system'])
     for gem_key in gemini_keys:
         try:
@@ -121,15 +110,14 @@ def get_ai_response(messages_payload):
                 model='gemini-3.6-flash',
                 contents=f"{system_prompt}\n\nChat History:\n{chat_history_str}"
             )
-            return res.text, "Gemini"
+            return res.text
         except Exception:
-            continue # Hata alrsa sonraki Gemini anahtarına geç
+            continue
 
-    return None, None
+    return None
 
 
 def get_transcription(audio_bytes):
-    # Ses dönüşümü için Groq anahtarlarını sırayla dene
     for g_key in groq_keys:
         try:
             client = Groq(api_key=g_key)
@@ -160,7 +148,7 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
         )
     with col_info:
         st.markdown("### Sarah (AI English Teacher)")
-        st.caption("Çoklu API yük dengeleme sistemi aktif. Sistem, anahtarlarınızda bir yoğunluk veya 503 hatası olduğunda otomatik olarak yedek anahtarlara geçer.")
+        st.caption("Streamlit Secrets üzerinden otomatik hibrit anahtar yönetimi aktif.")
 
     st.divider()
 
@@ -178,13 +166,16 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
     
     with col_mic:
         audio_file_input = st.audio_input("Konuşmak için tıklayın")
-        if audio_file_input is not None and groq_keys:
-            with st.spinner("Sarah sesinizi dinliyor..."):
-                transcribed = get_transcription(audio_file_input.getvalue())
-                if transcribed:
-                    user_query = transcribed
-                else:
-                    st.warning("Ses metne dönüştürülemedi, lütfen tekrar deneyin.")
+        if audio_file_input is not None:
+            if not groq_keys:
+                st.error("Ses tanıma için secrets.toml dosyasına GROQ_API_KEY eklemelisiniz.")
+            else:
+                with st.spinner("Sarah sesinizi dinliyor..."):
+                    transcribed = get_transcription(audio_file_input.getvalue())
+                    if transcribed:
+                        user_query = transcribed
+                    else:
+                        st.warning("Ses metne dönüştürülemedi.")
 
     with col_txt:
         text_query = st.chat_input("Veya buraya yazıp gönderin...")
@@ -197,14 +188,13 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
             st.markdown(user_query)
 
         ai_response = ""
-        used_engine = ""
 
         with st.chat_message("assistant", avatar="👩‍🏫"):
             with st.spinner("Sarah düşünüyor..."):
                 messages_payload = [{"role": "system", "content": system_prompt}]
                 messages_payload.extend([{"role": m["role"], "content": m["content"]} for m in st.session_state.messages])
 
-                ai_response, used_engine = get_ai_response(messages_payload)
+                ai_response = get_ai_response(messages_payload)
 
                 if ai_response:
                     st.markdown(ai_response)
@@ -222,7 +212,7 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
                     
                     st.rerun()
                 else:
-                    st.error("Tüm API anahtarlarınızda kota dolumu veya sunucu hatası (503) oluştu. Lütfen sol menüden yeni anahtar ekleyin.")
+                    st.error("Secrets üzerinde tanımlı hiçbir API anahtarı yanıt vermedi veya kotalar dolu.")
 
 
 # ==============================================================================
