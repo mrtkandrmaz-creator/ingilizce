@@ -114,7 +114,7 @@ Always answer in English, correct big mistakes gently, and keep the conversation
 # ==============================================================================
 if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
     st.title("🗣️ LearnAI: Canlı İngilizce Pratik")
-    st.caption("Groq Whisper (STT) + Groq Llama 3.3 (Hızlı Sohbet) + gTTS (TTS)")
+    st.caption("Groq Whisper (STT) + Groq Llama 3.3 (Hızlı Sohbet) + gTTS (Sesli Yanıt)")
 
     if not groq_client:
         st.error("🚨 Groq API anahtarı bulunamadı! Lütfen sol menüden anahtarınızı girin.")
@@ -144,7 +144,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
 
     user_text = ""
 
-    # 1. Başlangıçta henüz mesaj yoksa en üste karşılama butonu koyalım
+    # 1. Başlangıçta henüz mesaj yoksa en üste karşılama mikrofonu koyalım
     if not st.session_state.messages:
         st.info("👋 İngilizce pratik yapmak için aşağıdaki mikrofona tıklayarak konuşmaya başlayın!")
         audio_file_input = st.audio_input("🎤 Konuşmaya Başla")
@@ -173,7 +173,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
         if msg["role"] == "assistant":
             # Son asistan mesajı mı kontrolü
             if i == len(st.session_state.messages) - 1:
-                st.markdown("👇 **Cevap vermek için mikrofona tıklayın:**")
+                st.markdown("👇 **Sesli yanıt vermek için mikrofona tıklayın:**")
                 audio_file_input = st.audio_input(f"🎤 Sesli Yanıt Ver (Cevap #{i})")
                 
                 if audio_file_input is not None and groq_client:
@@ -192,7 +192,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         except Exception as e:
                             st.error(f"Hata: {e}")
 
-    # Alternatif Metin Girişi (Her zaman erişilebilir altta)
+    # Alternatif Metin Girişi
     st.markdown("---")
     text_input_val = st.chat_input("Veya İngilizce mesajınızı buraya yazın...")
     if text_input_val:
@@ -231,7 +231,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                     st.write(ai_response)
                     st.session_state.messages.append({"role": "assistant", "content": ai_response})
 
-                    # gTTS ile Seslendirme
+                    # gTTS ile Seslendirme (Otomatik sesli cevap için autoplay=True)
                     try:
                         tts = gTTS(text=ai_response, lang='en')
                         audio_fp = io.BytesIO()
