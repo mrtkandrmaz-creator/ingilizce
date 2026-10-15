@@ -8,7 +8,7 @@ from gtts import gTTS
 
 # --- SAYFA YAPILANDIRMASI ---
 st.set_page_config(
-    page_title="LearnAI - Hızlı İngilizce Asistanı", 
+    page_title="LearnAI - İngilizce Asistanı", 
     page_icon="⚡", 
     layout="wide"
 )
@@ -41,7 +41,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- ÇOKLU API ANAHTARLARINI OKUMA ---
+# --- ÇOKLU API ANAHTARLARINI GÜVENLİ OKUMA ---
 groq_keys = []
 gemini_keys = []
 
@@ -65,8 +65,8 @@ try:
         
     if not gemini_keys and "GEMINI_API_KEY" in st.secrets:
         gemini_keys = extract_keys(st.secrets["GEMINI_API_KEY"])
-except Exception:
-    pass
+except Exception as e:
+    st.error(f"Secrets okuma hatası: {e}")
 
 # --- OTURUM DURUMLARI (SESSION STATE) ---
 if "messages" not in st.session_state:
@@ -76,18 +76,23 @@ if "messages" not in st.session_state:
 
 if "flashcards" not in st.session_state:
     st.session_state.flashcards = [
-        {"word": "Lightning", "meaning": "Yıldırım, çok hızlı", "example": "This app runs at lightning speed."},
-        {"word": "Efficient", "meaning": "Verimli, hızlı çalışan", "example": "We use optimized API calls."}
+        {"word": "Resilient", "meaning": "Dayanıklı", "example": "We are fixing the connection issues."},
+        {"word": "Patient", "meaning": "Sabırlı", "example": "Thank you for your patience."}
     ]
 
 if "card_index" not in st.session_state:
     st.session_state.card_index = 0
 
-# --- SIDEBAR (KONTROL PANELİ) ---
+# --- SIDEBAR (KONTROL PANELİ VE DURUM GÖSTERGESİ) ---
 with st.sidebar:
     st.title("⚙️ Kontrol Paneli")
-    st.write(f"**Groq Key:** {len(groq_keys)} adet")
-    st.write(f"**Gemini Key:** {len(gemini_keys)} adet")
+    st.write(f"**Yüklü Groq Key:** {len(groq_keys)} adet")
+    st.write(f"**Yüklü Gemini Key:** {len(gemini_keys)} adet")
+    
+    if len(groq_keys) == 0 and len(gemini_keys) == 0:
+        st.error("🚨 DİKKAT: Hiçbir API anahtarı algılanamadı! Lütfen Streamlit Secrets (toml) ayarlarınızı kontrol edin.")
+    else:
+        st.success("✅ API Anahtar Havuzu Aktif")
     
     st.divider()
     app_mode = st.radio("Mod Seçimi", ["🗣️ Canlı Sohbet", "🎴 Kelime Kartları"])
@@ -98,37 +103,41 @@ system_prompt = f"You are Sarah, a friendly and warm female English AI teacher (
 
 
 # ==============================================================================
-# HIZLI VE OPTİMİZE YANIT ÜRETME FONKSİYONLARI
+# HATA AYIKLAMALI YANIT ÜRETME FONKSİYONU
 # ==============================================================================
 def get_ai_response(messages_payload):
-    # 1. En hızlı model olan Groq llama-3.1-8b-instant ile hızlıca dene
-    for g_key in groq_keys:
+    debug_logs = []
+    
+    # 1. Groq Anahtarlarını Dene
+    for i, g_key in enumerate(groq_keys):
         try:
             client = Groq(api_key=g_key)
             completion = client.chat.completions.create(
-                model="llama-3.1-8b-instant",  # En hızlı ve hafif model
+                model="llama-3.1-8b-instant",
                 messages=messages_payload,
                 temperature=0.7,
                 max_tokens=250
             )
             if completion and completion.choices:
                 return completion.choices[0].message.content
-        except Exception:
-            continue
+        except Exception as e:
+            debug_logs.append(f"Groq #{i+1} Hata: {str(e)}")
 
-    # 2. Groq yanıt vermezse Gemini 3.6 Flash ile devam et
+    # 2. Gemini Anahtarlarını Dene
     chat_history_str = "\n".join([f"{m['role']}: {m['content']}" for m in messages_payload if m['role'] != 'system'])
-    for gem_key in gemini_keys:
+    for i, gem_key in enumerate(gemini_keys):
         try:
             genai.configure(api_key=gem_key)
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            model = genai.GenerativeModel('gemini-3.6-flash')
             response = model.generate_content(f"{system_prompt}\n\nChat History:\n{chat_history_str}")
             if response and hasattr(response, 'text') and response.text:
                 return response.text
-        except Exception:
-            continue
+        except Exception as e:
+            debug_logs.append(f"Gemini #{i+1} Hata: {str(e)}")
 
-    return "⚠️ Şu an tüm API anahtarlarında yoğunluk yaşanıyor. Lütfen birkaç saniye sonra tekrar deneyin."
+    # Eğer tüm anahtarlar hata verdiyse teknik logları döndür
+    error_summary = " | ".join(debug_logs[:3]) # İlk 3 hatayı göster
+    return f"⚠️ Tüm API anahtarları reddedildi veya kota sınırına ulaştı.\n\n**Teknik Detay:** {error_summary}"
 
 
 def get_transcription(audio_bytes):
@@ -162,7 +171,7 @@ if app_mode == "🗣️ Canlı Sohbet":
         )
     with col_info:
         st.markdown("### Sarah (AI English Teacher)")
-        st.caption("⚡ Ultra hızlı yanıt modu aktif.")
+        st.caption("⚡ Hata teşhis ve akıllı geçiş modu aktif.")
 
     st.divider()
 
@@ -172,7 +181,6 @@ if app_mode == "🗣️ Canlı Sohbet":
             st.markdown(msg["content"])
 
     user_query = ""
-
     st.markdown("---")
     
     col_mic, col_txt = st.columns([1, 1])
@@ -208,7 +216,6 @@ if app_mode == "🗣️ Canlı Sohbet":
                     st.markdown(ai_response)
                     st.session_state.messages.append({"role": "assistant", "content": ai_response})
 
-                    # Seslendirmeyi hatasız ve hızlı yap
                     try:
                         tts = gTTS(text=ai_response, lang='en', slow=False)
                         audio_fp = io.BytesIO()
