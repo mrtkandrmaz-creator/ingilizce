@@ -137,15 +137,22 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
 
         st.markdown("---")
         
-        # Sürekli Hazır Ses Kayıt Alanı (Asistanın cevabından hemen sonra konuşabilmek için üstte)
-        st.markdown("🎙️ **Sesli Yanıt Ver (Mikrofon):**")
-        audio_file_input = st.audio_input("Asistana sesli yanıt göndermek için tıklayın")
-        
         user_text = ""
+
+        # Modern Tasarımlı Sohbet Devamı ve Sesli Yanıt Bölümü (En altta)
+        st.markdown("""
+        <div style="background-color: #1E1E1E; padding: 15px; border-radius: 10px; border: 1px solid #333; margin-bottom: 10px;">
+            <p style="color: #4CAF50; font-weight: bold; margin-bottom: 5px;">🎙️ Konuşmaya Devam Et (Sesli Yanıt)</p>
+            <span style="color: #aaa; font-size: 13px;">Asistanın cevabından sonra alttaki modern mikrofona tıklayarak konuşmanızı yapabilirsiniz:</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Modern Mikrofon Butonu (st.audio_input)
+        audio_file_input = st.audio_input("🎤 Sesli Yanıt Gönder")
 
         # Alternatif Metin Girişi
         with st.expander("⌨️ Veya Metin Yazarak Devam Et"):
-            text_input_val = st.chat_input("İngilizce mesajınızı yazın...")
+            text_input_val = st.chat_input("İngilizce mesajınızı buraya yazın...")
             if text_input_val:
                 user_text = text_input_val
 
@@ -200,7 +207,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         st.write(ai_response)
                         st.session_state.messages.append({"role": "assistant", "content": ai_response})
 
-                        # gTTS ile Seslendirme ve otomatik oynatma
+                        # gTTS ile Seslendirme
                         try:
                             tts = gTTS(text=ai_response, lang='en')
                             audio_fp = io.BytesIO()
