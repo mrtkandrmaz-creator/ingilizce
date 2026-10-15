@@ -1,3 +1,4 @@
+import os
 import io
 import json
 import streamlit as st
@@ -7,237 +8,242 @@ from gtts import gTTS
 
 # --- SAYFA YAPILANDIRMASI ---
 st.set_page_config(
-    page_title="LearnAI - Sesli İngilizce Asistanı", 
-    page_icon="✨", 
+    page_title="LearnAI - İngilizce Konuşma & Kelime Pratiği", 
+    page_icon="🇬🇧", 
     layout="wide"
 )
 
-# --- MODERN CSS TASARIM DOKUNUŞLARI ---
-st.markdown("""
-    <style>
-    .stApp {
-        background-color: #0f172a;
-        color: #f8fafc;
-    }
-    div.stButton > button {
-        background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
-        color: white;
-        border: none;
-        border-radius: 12px;
-        padding: 0.6rem 1.2rem;
-        font-weight: 600;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        transition: all 0.3s ease;
-    }
-    div.stButton > button:hover {
-        opacity: 0.95;
-        transform: translateY(-2px);
-        box-shadow: 0 6px 8px -1px rgba(0, 0, 0, 0.2);
-    }
-    .sidebar .sidebar-content {
-        background-color: #1e293b;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# --- SECRETS.TOML ÜZERİNDEN [api_keys] LİSTELERİNİ OKUMA ---
-groq_keys = []
-gemini_keys = []
-
+# --- GÜVENLİ API ANAHTARI YÖNETİMİ (Streamlit Secrets) ---
 try:
-    if "api_keys" in st.secrets:
-        api_sec = st.secrets["api_keys"]
-        groq_keys = api_sec.get("groq_keys", [])
-        gemini_keys = api_sec.get("gemini_keys", [])
-    else:
-        if "GROQ_API_KEY" in st.secrets:
-            groq_keys = [st.secrets["GROQ_API_KEY"]]
-        if "GEMINI_API_KEY" in st.secrets:
-            gemini_keys = [st.secrets["GEMINI_API_KEY"]]
-except Exception as e:
-    st.sidebar.error(f"Secrets okuma hatası: {e}")
+    default_groq_key = st.secrets.get("GROQ_API_KEY", "")
+    default_gemini_key = st.secrets.get("GEMINI_API_KEY", "")
+except Exception:
+    default_groq_key = ""
+    default_gemini_key = ""
 
 # --- OTURUM DURUMLARI (SESSION STATE) ---
 if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {"role": "assistant", "content": "Hello! I'm Sarah, your AI English teacher. How are you doing today? Let's practice speaking!"}
-    ]
+    st.session_state.messages = []
 
 if "flashcards" not in st.session_state:
     st.session_state.flashcards = [
-        {"word": "Resilient", "meaning": "Dayanıklı, dirençli", "example": "You must be resilient when learning a new language."},
-        {"word": "Seamless", "meaning": "Kusursuz, akıcı", "example": "We have a seamless conversation."}
+        {"word": "Persevere", "meaning": "Azim göstermek, sebat etmek", "example": "You must persevere to master a new language."},
+        {"word": "Fluency", "meaning": "Akıcılık", "example": "Daily practice will help you reach fluency."},
+        {"word": "Vocabulary", "meaning": "Kelime bilgisi", "example": "Flashcards are great for building vocabulary."}
     ]
 
 if "card_index" not in st.session_state:
     st.session_state.card_index = 0
 
-# --- SIDEBAR (KONTROL PANELİ) ---
+if "show_meaning" not in st.session_state:
+    st.session_state.show_meaning = False
+
+# --- SIDEBAR (AYARLAR VE MOD SEÇİMİ) ---
 with st.sidebar:
     st.title("⚙️ Kontrol Paneli")
     
-    st.write(f"**Yüklü Groq Key:** {len(groq_keys)} adet")
-    st.write(f"**Yüklü Gemini Key:** {len(gemini_keys)} adet")
+    use_manual_keys = st.checkbox("Özel API Anahtarı Gir", value=False)
+    
+    if use_manual_keys:
+        groq_api_key = st.text_input("Groq API Key", type="password")
+        gemini_api_key = st.text_input("Gemini API Key", type="password")
+    else:
+        groq_api_key = default_groq_key
+        gemini_api_key = default_gemini_key
+        st.success("🔒 API anahtarları Streamlit Secrets'tan alınıyor.")
     
     st.divider()
-    app_mode = st.radio("Mod Seçimi", ["🗣️ Canlı Sesli Sohbet", "🎴 Kelime Kartları"])
-    selected_level = st.selectbox("Seviyeniz", ["Beginner (A1-A2)", "Intermediate (B1-B2)", "Advanced (C1-C2)"])
-    teacher_persona = st.selectbox("Öğretmen Tarzı", ["Samimi Arkadaş", "Sabırlı Eğitmen", "Enerjik Koç"])
-
-system_prompt = f"You are Sarah, a friendly and warm female English AI teacher ({teacher_persona}) talking with a {selected_level} student. Keep your answers short, natural, conversational, correct mistakes gently, and always end with a quick follow-up question to keep the conversation flowing."
-
-
-# ==============================================================================
-# ÇOKLU API ANAHTARI DESTEKLİ HİBRİT YANIT FONKSİYONLARI
-# ==============================================================================
-def get_ai_response(messages_payload):
-    # 1. Groq anahtarlarını sırayla dene (herhangi biri çalışana kadar)
-    for g_key in groq_keys:
-        try:
-            client = Groq(api_key=g_key)
-            completion = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=messages_payload,
-                temperature=0.7,
-                max_tokens=300
-            )
-            return completion.choices[0].message.content
-        except Exception:
-            continue
-
-    # 2. Groq anahtarlarının tümü hata verirse Gemini anahtarlarını sırayla dene
-    chat_history_str = "\n".join([f"{m['role']}: {m['content']}" for m in messages_payload if m['role'] != 'system'])
-    for gem_key in gemini_keys:
-        try:
-            g_client = genai.Client(api_key=gem_key)
-            res = g_client.models.generate_content(
-                model='gemini-3.6-flash',
-                contents=f"{system_prompt}\n\nChat History:\n{chat_history_str}"
-            )
-            return res.text
-        except Exception:
-            continue
-
-    return None
-
-
-def get_transcription(audio_bytes):
-    for g_key in groq_keys:
-        try:
-            client = Groq(api_key=g_key)
-            audio_io = io.BytesIO(audio_bytes)
-            audio_io.name = "speech.wav"
-            transcription = client.audio.transcriptions.create(
-                file=(audio_io.name, audio_io.read()),
-                model="whisper-large-v3",
-                response_format="text",
-                language="en"
-            )
-            return transcription.strip()
-        except Exception:
-            continue
-    return None
-
-
-# ==============================================================================
-# MOD 1: CANLI SESLİ & YAZILI SOHBET
-# ==============================================================================
-if app_mode == "🗣️ Canlı Sesli Sohbet":
+    app_mode = st.radio("Uygulama Modu", ["🗣️ Canlı Sohbet & Sesli Pratik", "🎴 Kelime Kartları (Flashcards)"])
     
-    col_avatar, col_info = st.columns([1, 5])
-    with col_avatar:
-        st.image(
-            "https://static.vecteezy.com/system/resources/previews/060/362/634/non_2x/cartoon-female-teacher-avatar-with-glasses-isolated-in-a-bright-friendly-setting-3d-cartoon-female-teacher-educator-avatar-isolated-on-transparent-background-free-png.png", 
-            width=100
-        )
-    with col_info:
-        st.markdown("### Sarah (AI English Teacher)")
-        st.caption("Secrets üzerindeki çoklu anahtar havuzuyla kesintisiz hibrit bağlantı aktif.")
-
     st.divider()
+    selected_level = st.selectbox("İngilizce Seviyeniz", ["Beginner (A1-A2)", "Intermediate (B1-B2)", "Advanced (C1-C2)"])
+    teacher_persona = st.selectbox("Öğretmen Tarzı", ["Sabırlı Öğretmen", "Aşırı Samimi Arkadaş", "İş Dünyası Koçu"])
 
-    # Sohbet geçmişini ekrana basma
-    for msg in st.session_state.messages:
-        avatar_icon = "👩‍🏫" if msg["role"] == "assistant" else "👤"
-        with st.chat_message(msg["role"], avatar=avatar_icon):
-            st.markdown(msg["content"])
+# --- CLIENT'LARI BAŞLATMA ---
+groq_client = Groq(api_key=groq_api_key) if groq_api_key else None
+gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key else None
 
-    user_query = None
+# System Prompt Hazırlığı
+system_prompt = f"""You are a helpful and friendly English AI teacher ({teacher_persona}) for a {selected_level} student. 
+Keep your conversation flow natural. 
+Always answer in English, correct big mistakes gently, and end your response with a follow-up question to keep the chat going."""
 
-    st.markdown("---")
-    st.markdown("🎙️ **Cevabınızı sesli kaydedin veya yazın:**")
-    
-    col_mic, col_txt = st.columns([1, 1])
-    
-    with col_mic:
-        audio_file_input = st.audio_input("Konuşmak için tıklayın")
-        if audio_file_input is not None:
-            if not groq_keys:
-                st.error("Ses tanıma işlemi için geçerli bir Groq anahtarı bulunamadı.")
-            else:
-                with st.spinner("Sarah sesinizi dinliyor..."):
-                    transcribed = get_transcription(audio_file_input.getvalue())
-                    if transcribed:
-                        user_query = transcribed
-                    else:
-                        st.warning("Ses metne dönüştürülemedi.")
 
-    with col_txt:
-        text_query = st.chat_input("Veya buraya yazıp gönderin...")
-        if text_query:
-            user_query = text_query
+# ==============================================================================
+# MOD 1: CANLI SOHBET & SESLİ PRATİK
+# ==============================================================================
+if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
+    st.title("🗣️ LearnAI: Canlı İngilizce Pratik")
+    st.caption("Groq Whisper (STT) + Groq Llama 3 (Hızlı Sohbet) + Gemini (Gramer Analizi) + gTTS (TTS)")
 
-    # Eğer bir girdi (ses veya yazı) alındıysa süreci işlet
-    if user_query:
-        st.session_state.messages.append({"role": "user", "content": user_query})
-        with st.chat_message("user", avatar="👤"):
-            st.markdown(user_query)
+    col_chat, col_feedback = st.columns([2, 1])
 
-        ai_response = ""
+    with col_chat:
+        st.subheader("💬 Sohbet Ekranı")
+        
+        # Geçmiş Mesajları Göster
+        for msg in st.session_state.messages:
+            with st.chat_message(msg["role"]):
+                st.write(msg["content"])
 
-        with st.chat_message("assistant", avatar="👩‍🏫"):
-            with st.spinner("Sarah düşünüyor..."):
-                messages_payload = [{"role": "system", "content": system_prompt}]
-                messages_payload.extend([{"role": m["role"], "content": m["content"]} for m in st.session_state.messages])
+        st.markdown("---")
+        
+        # Girdi Yöntemi Seçimi (Ses veya Metin çakışmasını önlemek için)
+        input_method = st.radio("Girdi Yöntemi Seçin:", ["⌨️ Yazı Yazarak", "🎙️ Sesli Konuşarak (Mikrofon)"], horizontal=True)
+        
+        user_text = ""
 
-                ai_response = get_ai_response(messages_payload)
-
-                if ai_response:
-                    st.markdown(ai_response)
-                    st.session_state.messages.append({"role": "assistant", "content": ai_response})
-
+        if input_method == "⌨️ Yazı Yazarak":
+            user_text = st.chat_input("İngilizce mesajınızı yazın ve enter tuşuna basın...")
+            
+        else:
+            st.write("🎙️ **Mikrofona konuşun ve kaydı tamamlayın:**")
+            audio_file_input = st.audio_input("Ses kaydetmek için tıklayın")
+            
+            if audio_file_input is not None and groq_client:
+                with st.spinner("Sesiniz Groq Whisper ile metne dönüştürülüyor..."):
                     try:
-                        tts = gTTS(text=ai_response, lang='en', slow=False)
+                        audio_bytes = audio_file_input.getvalue()
+                        audio_io = io.BytesIO(audio_bytes)
+                        audio_io.name = "audio.wav"
+
+                        transcription = groq_client.audio.transcriptions.create(
+                            file=(audio_io.name, audio_io.read()),
+                            model="whisper-large-v3",
+                            response_format="text",
+                            language="en"
+                        )
+                        user_text = transcription.strip()
+                    except Exception as e:
+                        st.error(f"Groq Whisper Hatası: {e}")
+
+        # Eğer metin veya mikrofondan çevrilen yazı elde edildiyse işleme al
+        if user_text:
+            st.session_state.messages.append({"role": "user", "content": user_text})
+            with st.chat_message("user"):
+                st.write(user_text)
+
+            if groq_client:
+                with st.chat_message("assistant"):
+                    with st.spinner("Yapay zeka yanıt veriyor..."):
+                        messages_payload = [{"role": "system", "content": system_prompt}]
+                        messages_payload.extend([{"role": m["role"], "content": m["content"]} for m in st.session_state.messages])
+
+                        completion = groq_client.chat.completions.create(
+                            model="llama3-70b-8192",
+                            messages=messages_payload,
+                            temperature=0.7
+                        )
+                        ai_response = completion.choices[0].message.content
+                        st.write(ai_response)
+                        st.session_state.messages.append({"role": "assistant", "content": ai_response})
+
+                        # gTTS ile Seslendirme
+                        tts = gTTS(text=ai_response, lang='en')
                         audio_fp = io.BytesIO()
                         tts.write_to_fp(audio_fp)
                         audio_fp.seek(0)
-                        st.audio(audio_fp, format="audio/mp3", autoplay=True)
-                    except Exception:
-                        pass
-                    
+                        st.audio(audio_fp, format="audio/mp3")
+
+    # Sağ Kolon: Gemini ile Gramer ve Kelime Analizi
+    with col_feedback:
+        st.subheader("🧐 Gemini Gramer Koçu")
+        st.caption("Son cümlenizdeki dil bilgisi hataları ve öneriler:")
+
+        if st.session_state.messages and gemini_client:
+            last_user_msg = next((m["content"] for m in reversed(st.session_state.messages) if m["role"] == "user"), None)
+            
+            if last_user_msg:
+                with st.spinner("Gemini cümlenizi inceliyor..."):
+                    try:
+                        analysis_prompt = f"""
+                        Analyze the following English sentence spoken by a student ({selected_level} level):
+                        Sentence: "{last_user_msg}"
+
+                        Provide feedback in Turkish:
+                        1. **Grammar Correction:** Any mistakes? If yes, show correct version.
+                        2. **Better Alternatives:** A more natural native-like phrasing.
+                        3. **New Vocabulary:** Highlight 1 useful vocabulary word from the context.
+                        Keep it short and encouraging.
+                        """
+                        response = gemini_client.models.generate_content(
+                            model='gemini-2.5-flash',
+                            contents=analysis_prompt,
+                        )
+                        st.info(response.text)
+                    except Exception as e:
+                        st.warning(f"Gemini analizi alınamadı: {e}")
+        else:
+            st.write("Analiz almak için konuşmaya veya yazmaya başlayın!")
+
+
+# ==============================================================================
+# MOD 2: INTERAKTİF KELİME KARTLARI (FLASHCARDS)
+# ==============================================================================
+elif app_mode == "🎴 Kelime Kartları (Flashcards)":
+    st.title("🎴 Akıllı Kelime Kartları")
+    st.caption("Yapay zeka desteğiyle yeni kelimeler öğrenin ve pratik yapın.")
+
+    col_card, col_actions = st.columns([2, 1])
+
+    with col_card:
+        cards = st.session_state.flashcards
+        idx = st.session_state.card_index
+
+        if cards:
+            current_card = cards[idx]
+            
+            st.markdown(f"""
+            <div style="border:2px solid #4CAF50; border-radius:15px; padding:30px; text-align:center; background-color:#1E1E1E;">
+                <h1 style="color:#4CAF50; font-size:48px;">{current_card['word']}</h1>
+                <p style="color:#A0A0A0; font-size:18px;"><i>"{current_card['example']}"</i></p>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.write("")
+            
+            if st.button("👁️ Türkçe Anlamını Göster / Gizle"):
+                st.session_state.show_meaning = not st.session_state.show_meaning
+
+            if st.session_state.show_meaning:
+                st.success(f"**Anlamı:** {current_card['meaning']}")
+
+            btn_prev, btn_next = st.columns(2)
+            with btn_prev:
+                if st.button("⬅️ Önceki Kart"):
+                    st.session_state.card_index = (idx - 1) % len(cards)
+                    st.session_state.show_meaning = False
                     st.rerun()
-                else:
-                    st.error("Tüm API anahtarları denendi fakat hiçbiri yanıt vermedi. Lütfen secrets.toml dosyasındaki anahtarlarınızı kontrol edin.")
+            with btn_next:
+                if st.button("Sonraki Kart ➡️"):
+                    st.session_state.card_index = (idx + 1) % len(cards)
+                    st.session_state.show_meaning = False
+                    st.rerun()
 
-
-# ==============================================================================
-# MOD 2: KELİME KARTLARI
-# ==============================================================================
-elif app_mode == "🎴 Kelime Kartları":
-    st.title("🎴 Sarah ile Modern Kelime Kartları")
-    cards = st.session_state.flashcards
-    idx = st.session_state.card_index
-
-    if cards:
-        current_card = cards[idx]
+    with col_actions:
+        st.subheader("✨ AI ile Yeni Kelime Üret")
+        st.write("Belirli bir konuda Gemini kullanarak kartlarınıza otomatik kelimeler ekleyin:")
         
-        st.info(f"**Kelime:** {current_card['word']} \n\n *Örnek Cümle:* {current_card['example']}")
+        topic = st.text_input("Konu Girin (Örn: Business, Travel, Technology)", "Travel")
         
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("👁️ Türkçe Anlamı"):
-                st.success(f"Anlamı: {current_card['meaning']}")
-        with col2:
-            if st.button("➡️ Sonraki Kelime"):
-                st.session_state.card_index = (idx + 1) % len(cards)
-                st.rerun()
+        if st.button("🚀 AI Kartlar Üret"):
+            if gemini_client:
+                with st.spinner("Yeni kelime kartları hazırlanıyor..."):
+                    try:
+                        prompt = f"""
+                        Generate 3 English vocabulary cards about the topic '{topic}' suitable for {selected_level} level.
+                        Return ONLY a valid JSON array of objects with keys "word", "meaning" (in Turkish), and "example" (in English).
+                        Do not include markdown or extra text.
+                        """
+                        res = gemini_client.models.generate_content(
+                            model='gemini-2.5-flash',
+                            contents=prompt
+                        )
+                        clean_json = res.text.replace("```json", "").replace("```", "").strip()
+                        new_cards = json.loads(clean_json)
+                        st.session_state.flashcards.extend(new_cards)
+                        st.success(f"'{topic}' konusundan {len(new_cards)} yeni kelime eklendi!")
+                    except Exception as e:
+                        st.error(f"Kelime üretilirken hata oluştu: {e}")
+            else:
+                st.error("Lütfen geçerli bir Gemini API Key olduğundan emin olun.")
