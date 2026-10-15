@@ -103,10 +103,10 @@ with st.sidebar:
 groq_client = Groq(api_key=groq_api_key) if groq_api_key else None
 gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key else None
 
-# System Prompt Hazırlığı
+# Sıkılaştırılmış ve konudan sapmayı önleyen Sistem Promptu
 system_prompt = f"""You are a helpful and friendly English AI teacher ({teacher_persona}) for a {selected_level} student. 
-Keep your conversation flow natural. 
-Always answer in English, correct big mistakes gently, and end your response with a follow-up question to keep the chat going."""
+CRITICAL RULE: Always stay strictly focused on the user's input, answer their specific question directly, and do not wander off to unrelated topics. 
+Always answer in English, correct big mistakes gently, and keep the conversation relevant to what the user just said."""
 
 
 # ==============================================================================
@@ -119,70 +119,86 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
     if not groq_client:
         st.error("🚨 Groq API anahtarı bulunamadı! Lütfen sol menüden anahtarınızı girin.")
 
-    # Özel CSS ile Modern ve Büyük Mikrofon Buton Tasarımı
+    # Modern ve Büyük Mikrofon Buton Tasarımı
     st.markdown("""
     <style>
     div[data-testid="stAudioInput"] {
         background-color: #1E1E1E;
         border: 2px dashed #4CAF50;
         border-radius: 12px;
-        padding: 15px;
+        padding: 10px;
         text-align: center;
-        margin-top: 10px;
-        margin-bottom: 20px;
+        margin-top: 5px;
+        margin-bottom: 15px;
     }
     div[data-testid="stAudioInput"] button {
         background-color: #4CAF50 !important;
         color: white !important;
-        font-size: 18px !important;
+        font-size: 16px !important;
         font-weight: bold !important;
         border-radius: 8px !important;
-        padding: 10px 20px !important;
+        padding: 8px 16px !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
-    # Geçmiş Mesajları Göster
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]):
-            st.write(msg["content"])
-
-    st.markdown("---")
-    
     user_text = ""
 
-    # Yapay Zeka Cevabından Sonra Hemen Görünen Modern Mikrofon Alanı
-    st.markdown("### 🎙️ Konuşmaya Devam Et")
-    st.caption("Yapay zekanın yanıtından hemen sonra sesli yanıt vermek için aşağıdaki büyük mikrofona tıklayın:")
+    # 1. Başlangıçta henüz mesaj yoksa en üste karşılama butonu koyalım
+    if not st.session_state.messages:
+        st.info("👋 İngilizce pratik yapmak için aşağıdaki mikrofona tıklayarak konuşmaya başlayın!")
+        audio_file_input = st.audio_input("🎤 Konuşmaya Başla")
+        if audio_file_input is not None and groq_client:
+            with st.spinner("Sesiniz işleniyor..."):
+                try:
+                    audio_bytes = audio_file_input.getvalue()
+                    audio_io = io.BytesIO(audio_bytes)
+                    audio_io.name = "audio.wav"
+                    transcription = groq_client.audio.transcriptions.create(
+                        file=(audio_io.name, audio_io.read()),
+                        model="whisper-large-v3",
+                        response_format="text",
+                        language="en"
+                    )
+                    user_text = transcription.strip()
+                except Exception as e:
+                    st.error(f"Hata: {e}")
     
-    # Büyük ve Modern Mikrofon Girişi
-    audio_file_input = st.audio_input("🎤 Sesli Yanıt Gönder")
+    # 2. Mesaj geçmişini ve HER YAPAY ZEKA YANITINDAN SONRA mikrofonu gösterelim
+    for i, msg in enumerate(st.session_state.messages):
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
+        
+        # Eğer mesaj bir assistant (yapay zeka) mesajı ise, hemen altına mikrofon koyalım
+        if msg["role"] == "assistant":
+            # Son asistan mesajı mı kontrolü
+            if i == len(st.session_state.messages) - 1:
+                st.markdown("👇 **Cevap vermek için mikrofona tıklayın:**")
+                audio_file_input = st.audio_input(f"🎤 Sesli Yanıt Ver (Cevap #{i})")
+                
+                if audio_file_input is not None and groq_client:
+                    with st.spinner("Sesiniz işleniyor..."):
+                        try:
+                            audio_bytes = audio_file_input.getvalue()
+                            audio_io = io.BytesIO(audio_bytes)
+                            audio_io.name = "audio.wav"
+                            transcription = groq_client.audio.transcriptions.create(
+                                file=(audio_io.name, audio_io.read()),
+                                model="whisper-large-v3",
+                                response_format="text",
+                                language="en"
+                            )
+                            user_text = transcription.strip()
+                        except Exception as e:
+                            st.error(f"Hata: {e}")
 
-    # Alternatif Metin Girişi
-    with st.expander("⌨️ Veya Metin Yazarak Devam Et"):
-        text_input_val = st.chat_input("İngilizce mesajınızı buraya yazın...")
-        if text_input_val:
-            user_text = text_input_val
+    # Alternatif Metin Girişi (Her zaman erişilebilir altta)
+    st.markdown("---")
+    text_input_val = st.chat_input("Veya İngilizce mesajınızı buraya yazın...")
+    if text_input_val:
+        user_text = text_input_val
 
-    # Mikrofon girdisi varsa Whisper ile metne çevir
-    if audio_file_input is not None and groq_client:
-        with st.spinner("Sesiniz Groq Whisper ile metne dönüştürülüyor..."):
-            try:
-                audio_bytes = audio_file_input.getvalue()
-                audio_io = io.BytesIO(audio_bytes)
-                audio_io.name = "audio.wav"
-
-                transcription = groq_client.audio.transcriptions.create(
-                    file=(audio_io.name, audio_io.read()),
-                    model="whisper-large-v3",
-                    response_format="text",
-                    language="en"
-                )
-                user_text = transcription.strip()
-            except Exception as e:
-                st.error(f"Groq Whisper Hatası: {e}")
-
-    # Kullanıcıdan girdi alındıysa işleme koy
+    # Kullanıcıdan girdi alındıysa işleme koy ve yanıt üret
     if user_text:
         st.session_state.messages.append({"role": "user", "content": user_text})
         with st.chat_message("user"):
@@ -198,7 +214,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         completion = groq_client.chat.completions.create(
                             model="llama-3.3-70b-versatile",
                             messages=messages_payload,
-                            temperature=0.7
+                            temperature=0.5
                         )
                         ai_response = completion.choices[0].message.content
                     except Exception as e:
@@ -206,7 +222,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                             completion = groq_client.chat.completions.create(
                                 model="openai/gpt-oss-20b",
                                 messages=messages_payload,
-                                temperature=0.7
+                                temperature=0.5
                             )
                             ai_response = completion.choices[0].message.content
                         except Exception as e2:
@@ -224,6 +240,9 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         st.audio(audio_fp, format="audio/mp3", autoplay=True)
                     except Exception as tts_err:
                         st.warning(f"Ses sentezleme uyarısı: {tts_err}")
+                
+                # Sayfayı yenileyerek yeni asistan mesajının altında mikrofonun hemen belirmesini sağla
+                st.rerun()
 
 
 # ==============================================================================
