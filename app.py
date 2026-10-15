@@ -101,13 +101,7 @@ with st.sidebar:
 
 # --- CLIENT'LARI BAŞLATMA ---
 groq_client = Groq(api_key=groq_api_key) if groq_api_key else None
-
-gemini_client = None
-if gemini_api_key:
-    try:
-        gemini_client = genai.Client(api_key=gemini_api_key)
-    except Exception:
-        gemini_client = None
+gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key else None
 
 # System Prompt Hazırlığı
 system_prompt = f"""You are a helpful and friendly English AI teacher ({teacher_persona}) for a {selected_level} student. 
@@ -120,135 +114,97 @@ Always answer in English, correct big mistakes gently, and end your response wit
 # ==============================================================================
 if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
     st.title("🗣️ LearnAI: Canlı İngilizce Pratik")
-    st.caption("Groq Whisper (STT) + Groq Llama 3.3 (Hızlı Sohbet) + Gemini (Gramer Analizi) + gTTS (TTS)")
+    st.caption("Groq Whisper (STT) + Groq Llama 3.3 (Hızlı Sohbet) + gTTS (TTS)")
 
     if not groq_client:
         st.error("🚨 Groq API anahtarı bulunamadı! Lütfen sol menüden anahtarınızı girin.")
 
-    col_chat, col_feedback = st.columns([2, 1])
+    # Geçmiş Mesajları Göster
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
 
-    with col_chat:
-        st.subheader("💬 Sohbet Ekranı")
-        
-        # Geçmiş Mesajları Göster
-        for msg in st.session_state.messages:
-            with st.chat_message(msg["role"]):
-                st.write(msg["content"])
+    st.markdown("---")
+    
+    user_text = ""
 
-        st.markdown("---")
-        
-        user_text = ""
+    # Asistanın son cevabından sonra hemen konuşma / sesli yanıt verme alanı
+    st.markdown("""
+    <div style="background-color: #1E1E1E; padding: 12px; border-radius: 8px; border: 1px solid #333; margin-bottom: 10px;">
+        <p style="color: #4CAF50; font-weight: bold; margin-bottom: 3px;">🎙️ Sesli Yanıt Ver (Mikrofon)</p>
+        <span style="color: #aaa; font-size: 13px;">Yapay zekanın cevabından hemen sonra konuşmak için alttaki butona tıklayın:</span>
+    </div>
+    """, unsafe_allow_html=True)
 
-        # Modern Tasarımlı Sohbet Devamı ve Sesli Yanıt Bölümü (En altta)
-        st.markdown("""
-        <div style="background-color: #1E1E1E; padding: 15px; border-radius: 10px; border: 1px solid #333; margin-bottom: 10px;">
-            <p style="color: #4CAF50; font-weight: bold; margin-bottom: 5px;">🎙️ Konuşmaya Devam Et (Sesli Yanıt)</p>
-            <span style="color: #aaa; font-size: 13px;">Asistanın cevabından sonra alttaki modern mikrofona tıklayarak konuşmanızı yapabilirsiniz:</span>
-        </div>
-        """, unsafe_allow_html=True)
+    # Mikrofon Butonu
+    audio_file_input = st.audio_input("🎤 Konuşmaya Başla")
 
-        # Modern Mikrofon Butonu (st.audio_input)
-        audio_file_input = st.audio_input("🎤 Sesli Yanıt Gönder")
+    # Alternatif Metin Girişi
+    with st.expander("⌨️ Veya Metin Yazarak Devam Et"):
+        text_input_val = st.chat_input("İngilizce mesajınızı buraya yazın...")
+        if text_input_val:
+            user_text = text_input_val
 
-        # Alternatif Metin Girişi
-        with st.expander("⌨️ Veya Metin Yazarak Devam Et"):
-            text_input_val = st.chat_input("İngilizce mesajınızı buraya yazın...")
-            if text_input_val:
-                user_text = text_input_val
+    # Mikrofon girdisi varsa Whisper ile metne çevir
+    if audio_file_input is not None and groq_client:
+        with st.spinner("Sesiniz Groq Whisper ile metne dönüştürülüyor..."):
+            try:
+                audio_bytes = audio_file_input.getvalue()
+                audio_io = io.BytesIO(audio_bytes)
+                audio_io.name = "audio.wav"
 
-        # Mikrofon girdisi varsa Whisper ile metne çevir
-        if audio_file_input is not None and groq_client:
-            with st.spinner("Sesiniz Groq Whisper ile metne dönüştürülüyor..."):
-                try:
-                    audio_bytes = audio_file_input.getvalue()
-                    audio_io = io.BytesIO(audio_bytes)
-                    audio_io.name = "audio.wav"
+                transcription = groq_client.audio.transcriptions.create(
+                    file=(audio_io.name, audio_io.read()),
+                    model="whisper-large-v3",
+                    response_format="text",
+                    language="en"
+                )
+                user_text = transcription.strip()
+            except Exception as e:
+                st.error(f"Groq Whisper Hatası: {e}")
 
-                    transcription = groq_client.audio.transcriptions.create(
-                        file=(audio_io.name, audio_io.read()),
-                        model="whisper-large-v3",
-                        response_format="text",
-                        language="en"
-                    )
-                    user_text = transcription.strip()
-                except Exception as e:
-                    st.error(f"Groq Whisper Hatası: {e}")
+    # Kullanıcıdan girdi alındıysa işleme koy
+    if user_text:
+        st.session_state.messages.append({"role": "user", "content": user_text})
+        with st.chat_message("user"):
+            st.write(user_text)
 
-        # Eğer kullanıcı yazı yazdıysa veya mikrofondan ses çevrildiyse işleme al
-        if user_text:
-            st.session_state.messages.append({"role": "user", "content": user_text})
-            with st.chat_message("user"):
-                st.write(user_text)
+        if groq_client:
+            with st.chat_message("assistant"):
+                with st.spinner("Yapay zeka yanıt veriyor..."):
+                    messages_payload = [{"role": "system", "content": system_prompt}]
+                    messages_payload.extend([{"role": m["role"], "content": m["content"]} for m in st.session_state.messages])
 
-            if groq_client:
-                with st.chat_message("assistant"):
-                    with st.spinner("Yapay zeka yanıt veriyor..."):
-                        messages_payload = [{"role": "system", "content": system_prompt}]
-                        messages_payload.extend([{"role": m["role"], "content": m["content"]} for m in st.session_state.messages])
-
+                    try:
+                        completion = groq_client.chat.completions.create(
+                            model="llama-3.3-70b-versatile",
+                            messages=messages_payload,
+                            temperature=0.7
+                        )
+                        ai_response = completion.choices[0].message.content
+                    except Exception as e:
                         try:
                             completion = groq_client.chat.completions.create(
-                                model="llama-3.3-70b-versatile",
+                                model="openai/gpt-oss-20b",
                                 messages=messages_payload,
                                 temperature=0.7
                             )
                             ai_response = completion.choices[0].message.content
-                        except Exception as e:
-                            try:
-                                completion = groq_client.chat.completions.create(
-                                    model="openai/gpt-oss-20b",
-                                    messages=messages_payload,
-                                    temperature=0.7
-                                )
-                                ai_response = completion.choices[0].message.content
-                            except Exception as e2:
-                                ai_response = f"Groq API Hatası: {e2}"
+                        except Exception as e2:
+                            ai_response = f"Groq API Hatası: {e2}"
 
-                        st.write(ai_response)
-                        st.session_state.messages.append({"role": "assistant", "content": ai_response})
+                    st.write(ai_response)
+                    st.session_state.messages.append({"role": "assistant", "content": ai_response})
 
-                        # gTTS ile Seslendirme
-                        try:
-                            tts = gTTS(text=ai_response, lang='en')
-                            audio_fp = io.BytesIO()
-                            tts.write_to_fp(audio_fp)
-                            audio_fp.seek(0)
-                            st.audio(audio_fp, format="audio/mp3", autoplay=True)
-                        except Exception as tts_err:
-                            st.warning(f"Ses sentezleme uyarısı: {tts_err}")
-
-    # Sağ Kolon: Gemini ile Gramer ve Kelime Analizi
-    with col_feedback:
-        st.subheader("🧐 Gemini Gramer Koçu")
-        st.caption("Son cümlenizdeki dil bilgisi hataları ve öneriler:")
-
-        if not gemini_client:
-            st.warning("⚠️ Geçerli bir Gemini API anahtarı (AIzaSy...) bulunamadığı için gramer analizi devre dışı.")
-        elif st.session_state.messages and gemini_client:
-            last_user_msg = next((m["content"] for m in reversed(st.session_state.messages) if m["role"] == "user"), None)
-            
-            if last_user_msg:
-                with st.spinner("Gemini cümlenizi inceliyor..."):
+                    # gTTS ile Seslendirme
                     try:
-                        analysis_prompt = f"""
-                        Analyze the following English sentence spoken by a student ({selected_level} level):
-                        Sentence: "{last_user_msg}"
-
-                        Provide feedback in Turkish:
-                        1. **Grammar Correction:** Any mistakes? If yes, show correct version.
-                        2. **Better Alternatives:** A more natural native-like phrasing.
-                        3. **New Vocabulary:** Highlight 1 useful vocabulary word from the context.
-                        Keep it short and encouraging.
-                        """
-                        response = gemini_client.models.generate_content(
-                            model='gemini-3.6-flash',
-                            contents=analysis_prompt,
-                        )
-                        st.info(response.text)
-                    except Exception as e:
-                        st.warning(f"Gemini analizi alınamadı: {e}")
-        else:
-            st.write("Analiz almak için konuşmaya veya yazmaya başlayın!")
+                        tts = gTTS(text=ai_response, lang='en')
+                        audio_fp = io.BytesIO()
+                        tts.write_to_fp(audio_fp)
+                        audio_fp.seek(0)
+                        st.audio(audio_fp, format="audio/mp3", autoplay=True)
+                    except Exception as tts_err:
+                        st.warning(f"Ses sentezleme uyarısı: {tts_err}")
 
 
 # ==============================================================================
@@ -310,7 +266,7 @@ elif app_mode == "🎴 Kelime Kartları (Flashcards)":
                         Do not include markdown or extra text.
                         """
                         res = gemini_client.models.generate_content(
-                            model='gemini-2.5-flash',
+                            model='gemini-3.6-flash',
                             contents=prompt
                         )
                         clean_json = res.text.replace("```json", "").replace("```", "").strip()
