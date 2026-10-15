@@ -84,11 +84,13 @@ system_prompt = f"You are Sarah, a friendly and warm female English AI teacher (
 
 
 # ==============================================================================
-# HİBRİT VE GÜVENLİ YANIT ÜRETME FONKSİYONLARI
+# HİBRİT VE DETAYLI HATA AYIKLAMALI YANIT ÜRETME FONKSİYONLARI
 # ==============================================================================
 def get_ai_response(messages_payload):
-    # 1. Önce Groq listesindeki anahtarları sırayla dene
-    for g_key in groq_keys:
+    errors = []
+    
+    # 1. Groq anahtarlarını dene ve hataları topla
+    for i, g_key in enumerate(groq_keys):
         try:
             client = Groq(api_key=g_key)
             completion = client.chat.completions.create(
@@ -98,23 +100,23 @@ def get_ai_response(messages_payload):
                 max_tokens=300
             )
             if completion and completion.choices:
-                return completion.choices[0].message.content
-        except Exception:
-            continue
+                return completion.choices[0].message.content, None
+        except Exception as e:
+            errors.append(f"Groq Key #{i+1} Hatası: {str(e)}")
 
-    # 2. Groq yanıt vermezse Gemini listesindeki anahtarları sırayla dene
+    # 2. Gemini anahtarlarını dene ve hataları topla
     chat_history_str = "\n".join([f"{m['role']}: {m['content']}" for m in messages_payload if m['role'] != 'system'])
-    for gem_key in gemini_keys:
+    for i, gem_key in enumerate(gemini_keys):
         try:
             genai.configure(api_key=gem_key)
             model = genai.GenerativeModel('gemini-3.6-flash')
             response = model.generate_content(f"{system_prompt}\n\nChat History:\n{chat_history_str}")
             if response and hasattr(response, 'text') and response.text:
-                return response.text
-        except Exception:
-            continue
+                return response.text, None
+        except Exception as e:
+            errors.append(f"Gemini Key #{i+1} Hatası: {str(e)}")
 
-    return None
+    return None, errors
 
 
 def get_transcription(audio_bytes):
@@ -148,7 +150,7 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
         )
     with col_info:
         st.markdown("### Sarah (AI English Teacher)")
-        st.caption("Güvenli hibrit anahtar havuzu ve optimize Gemini entegrasyonu aktif.")
+        st.caption("Detaylı hata ayıklama modu aktif.")
 
     st.divider()
 
@@ -194,7 +196,7 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
                 messages_payload = [{"role": "system", "content": system_prompt}]
                 messages_payload.extend([{"role": m["role"], "content": m["content"]} for m in st.session_state.messages])
 
-                ai_response = get_ai_response(messages_payload)
+                ai_response, debug_errors = get_ai_response(messages_payload)
 
                 if ai_response:
                     st.markdown(ai_response)
@@ -211,7 +213,9 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
                     
                     st.rerun()
                 else:
-                    st.error("Tüm API anahtarları denendi fakat hiçbiri yanıt vermedi. Lütfen secrets.toml dosyanızdaki anahtarların geçerliliğini ve internet bağlantınızı kontrol edin.")
+                    st.error("Tüm API anahtarları hata verdi. Alınan teknik detaylar:")
+                    for err in debug_errors:
+                        st.code(err)
 
 
 # ==============================================================================
