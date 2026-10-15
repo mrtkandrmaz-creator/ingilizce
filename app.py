@@ -229,7 +229,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         Keep it short and encouraging.
                         """
                         response = gemini_client.models.generate_content(
-                            model='gemini-2.5-flash',
+                            model='gemini-3.6-flash',
                             contents=analysis_prompt,
                         )
                         st.info(response.text)
