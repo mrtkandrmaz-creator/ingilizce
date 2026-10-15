@@ -4,7 +4,6 @@ import json
 import streamlit as st
 from groq import Groq
 from google import genai
-from streamlit_mic_recorder import mic_recorder
 from gtts import gTTS
 
 # --- SAYFA YAPILANDIRMASI ---
@@ -87,28 +86,25 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                 st.write(msg["content"])
 
         st.markdown("---")
-        st.write("🎙️ **Mikrofon ile Konuşun:**")
+        st.write("🎙️ **Sesli Mesaj Gönder:**")
         
-        # Mikrofon Kaydedici
-        audio_recorded = mic_recorder(
-            start_prompt="🔴 Kaydı Başlat", 
-            stop_prompt="⏹️ Bitir ve Gönder", 
-            key="mic_recorder"
-        )
+        # Streamlit yerleşik ses kayıt bileşeni (Tarayıcı mikrofonu ile tam uyumlu)
+        audio_file_input = st.audio_input("Mikrofonu kullanmak için kayıt tuşuna basın")
         
         text_input = st.chat_input("Veya buraya İngilizce yazın...")
         user_text = ""
 
-        # 1. MİKROFON GİRDİSİ -> GROQ WHISPER STT
-        if audio_recorded and groq_client:
+        # 1. SES DOSYASI -> GROQ WHISPER STT
+        if audio_file_input is not None and groq_client:
             with st.spinner("Sesiniz Groq Whisper ile metne dönüştürülüyor..."):
                 try:
-                    audio_bytes = audio_recorded['bytes']
-                    audio_file = io.BytesIO(audio_bytes)
-                    audio_file.name = "speech.wav"
+                    # Ses verisini byte formatından oku
+                    audio_bytes = audio_file_input.getvalue()
+                    audio_io = io.BytesIO(audio_bytes)
+                    audio_io.name = "audio.wav"
 
                     transcription = groq_client.audio.transcriptions.create(
-                        file=(audio_file.name, audio_file.read()),
+                        file=(audio_io.name, audio_io.read()),
                         model="whisper-large-v3",
                         response_format="text",
                         language="en"
@@ -141,7 +137,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         st.write(ai_response)
                         st.session_state.messages.append({"role": "assistant", "content": ai_response})
 
-                        # gTTS ile Seslendirme (Tarayıcı bloklamasını önlemek için autoplay kaldırıldı, manuel çalma butonu eklendi)
+                        # gTTS ile Seslendirme
                         tts = gTTS(text=ai_response, lang='en')
                         audio_fp = io.BytesIO()
                         tts.write_to_fp(audio_fp)
