@@ -22,7 +22,7 @@ try:
         groq_api_key = st.secrets["GROQ_API_KEY"]
     if "GEMINI_API_KEY" in st.secrets:
         gemini_api_key = st.secrets["GEMINI_API_KEY"]
-except Exception as e:
+except Exception:
     pass
 
 # --- OTURUM DURUMLARI (SESSION STATE) ---
@@ -41,7 +41,7 @@ if "card_index" not in st.session_state:
 if "show_meaning" not in st.session_state:
     st.session_state.show_meaning = False
 
-# --- SIDEBAR (KONTROL PANELİ VE GÜVENLİK KONTROLÜ) ---
+# --- SIDEBAR (KONTROL PANELİ) ---
 with st.sidebar:
     st.title("⚙️ Kontrol Paneli")
     
@@ -54,9 +54,9 @@ with st.sidebar:
         gemini_api_key = manual_gemini
 
     st.divider()
-    st.write("**Hibrit Bağlantı Durumu:**")
-    st.write(f"Groq API: {'✅ Aktif' if groq_api_key else '❌ Bulunamadı'}")
-    st.write(f"Gemini API: {'✅ Aktif' if gemini_api_key else '❌ Bulunamadı'}")
+    st.write("**Hibrit Motor Durumu:**")
+    st.write(f"Groq API: {'✅ Aktif' if groq_api_key else '❌ Yok'}")
+    st.write(f"Gemini API: {'✅ Aktif' if gemini_api_key else '❌ Yok'}")
     
     st.divider()
     app_mode = st.radio("Uygulama Modu", ["🗣️ Canlı Sohbet & Pratik", "🎴 Kelime Kartları"])
@@ -71,10 +71,10 @@ system_prompt = f"You are a helpful and friendly English AI teacher for a {selec
 
 
 # ==============================================================================
-# MOD 1: CANLI SOHBET & HİBRİT ANALİZ
+# MOD 1: CANLI SOHBET & HİBRİT / OTOMATİK YEDEKLEME MOTORU
 # ==============================================================================
 if app_mode == "🗣️ Canlı Sohbet & Pratik":
-    st.title("🗣️ LearnAI: Canlı İngilizce Pratik (Groq + Gemini Hibrit)")
+    st.title("🗣️ LearnAI: Canlı İngilizce Pratik (Akıllı Hibrit Mod)")
 
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
@@ -83,49 +83,65 @@ if app_mode == "🗣️ Canlı Sohbet & Pratik":
     user_query = st.chat_input("İngilizce mesajınızı yazın...")
 
     if user_query:
-        if not groq_client:
-            st.error("Groq API anahtarı bulunamadı! Lütfen secrets.toml dosyanızı veya sol menüyü kontrol edin.")
+        if not groq_client and not gemini_client:
+            st.error("Hiçbir API anahtarı bulunamadı! Lütfen sol menüye en az bir anahtar girin.")
         else:
             st.session_state.messages.append({"role": "user", "content": user_query})
             with st.chat_message("user"):
                 st.markdown(user_query)
 
-            with st.chat_message("assistant"):
-                with st.spinner("Groq yanıt hazırlıyor..."):
-                    try:
-                        messages_payload = [{"role": "system", "content": system_prompt}]
-                        messages_payload.extend([{"role": m["role"], "content": m["content"]} for m in st.session_state.messages])
+            ai_response = ""
+            success = False
 
-                        # GÜNCELLENEN MODEL ADI (llama-3.3-70b-versatile)
-                        completion = groq_client.chat.completions.create(
-                            model="llama-3.3-70b-versatile",
-                            messages=messages_payload,
-                            temperature=0.7
-                        )
-                        ai_response = completion.choices[0].message.content
+            with st.chat_message("assistant"):
+                with st.spinner("Yapay zeka yanıt hazırlıyor..."):
+                    
+                    # 1. ÖNCE GROQ DENEYELİM (Groq aktifse)
+                    if groq_client and not success:
+                        try:
+                            messages_payload = [{"role": "system", "content": system_prompt}]
+                            messages_payload.extend([{"role": m["role"], "content": m["content"]} for m in st.session_state.messages])
+
+                            # En kararlı Groq model adlarından biri
+                            completion = groq_client.chat.completions.create(
+                                model="llama-3.1-8b-instant",
+                                messages=messages_payload,
+                                temperature=0.7
+                            )
+                            ai_response = completion.choices[0].message.content
+                            success = True
+                        except Exception as e:
+                            # Groq hata verirse sessizce Gemini'ye geçecek
+                            pass
+
+                    # 2. EĞER GROQ BAŞARISIZ OLURSA VEYA YOKSA GEMİNİ DEVREYE GİRER
+                    if gemini_client and not success:
+                        try:
+                            chat_history_str = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.messages])
+                            gemini_full_prompt = f"{system_prompt}\n\nChat History:\n{chat_history_str}\n\nRespond as the teacher:"
+                            
+                            res = gemini_client.models.generate_content(
+                                model='gemini-2.5-flash',
+                                contents=gemini_full_prompt
+                            )
+                            ai_response = res.text
+                            success = True
+                        except Exception as e:
+                            st.error(f"Tüm yapay zeka servislerinde hata oluştu: {e}")
+
+                    # Yanıtı ekrana bas ve seslendir
+                    if success and ai_response:
                         st.markdown(ai_response)
                         st.session_state.messages.append({"role": "assistant", "content": ai_response})
 
-                        tts = gTTS(text=ai_response, lang='en')
-                        audio_fp = io.BytesIO()
-                        tts.write_to_fp(audio_fp)
-                        audio_fp.seek(0)
-                        st.audio(audio_fp, format="audio/mp3")
-
-                    except Exception as e:
-                        st.error(f"Groq API Hatası: {e}")
-
-            if gemini_client:
-                with st.expander("🧐 Gemini Hibrit Gramer ve Kelime Koçu Analizi"):
-                    try:
-                        analysis_prompt = f"Analyze this sentence spoken by a student: '{user_query}'. Give brief Turkish feedback on grammar mistakes and better alternatives."
-                        res = gemini_client.models.generate_content(
-                            model='gemini-2.5-flash',
-                            contents=analysis_prompt
-                        )
-                        st.info(res.text)
-                    except Exception as e:
-                        st.warning(f"Gemini analizi alınamadı: {e}")
+                        try:
+                            tts = gTTS(text=ai_response, lang='en')
+                            audio_fp = io.BytesIO()
+                            tts.write_to_fp(audio_fp)
+                            audio_fp.seek(0)
+                            st.audio(audio_fp, format="audio/mp3")
+                        except Exception:
+                            pass
 
 
 # ==============================================================================
