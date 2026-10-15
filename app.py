@@ -103,17 +103,17 @@ system_prompt = f"You are Sarah, a friendly and warm female English AI teacher (
 
 
 # ==============================================================================
-# GÜNCELLENMİŞ HİBRİT YANIT ÜRETME FONKSİYONLARI (DOĞRU MODEL İSİMLERİYLE)
+# HİBRİT YANIT ÜRETME FONKSİYONLARI (GÜVENLİ İZOLASYON)
 # ==============================================================================
 def get_ai_response(messages_payload):
     errors = []
     
-    # 1. Groq anahtarlarını güncel model adıyla dene
+    # 1. Groq anahtarlarını dene
     for i, g_key in enumerate(groq_keys):
         try:
             client = Groq(api_key=g_key)
             completion = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",  # Güncel ve çalışan Groq modeli
+                model="llama-3.3-70b-versatile",
                 messages=messages_payload,
                 temperature=0.7,
                 max_tokens=300
@@ -121,20 +121,19 @@ def get_ai_response(messages_payload):
             if completion and completion.choices:
                 return completion.choices[0].message.content, None
         except Exception as e:
-            errors.append(f"Groq Key #{i+1} Hatası: {str(e)}")
+            errors.append(f"Groq Key #{i+1}: {str(e)}")
 
-    # 2. Gemini anahtarlarını güncel model adıyla dene
+    # 2. Gemini anahtarlarını dene
     chat_history_str = "\n".join([f"{m['role']}: {m['content']}" for m in messages_payload if m['role'] != 'system'])
     for i, gem_key in enumerate(gemini_keys):
         try:
             genai.configure(api_key=gem_key)
-            # Kota aşımı riskine karşı en kararlı flash modeli
             model = genai.GenerativeModel('gemini-3.6-flash')
             response = model.generate_content(f"{system_prompt}\n\nChat History:\n{chat_history_str}")
             if response and hasattr(response, 'text') and response.text:
                 return response.text, None
         except Exception as e:
-            errors.append(f"Gemini Key #{i+1} Hatası: {str(e)}")
+            errors.append(f"Gemini Key #{i+1}: {str(e)}")
 
     return None, errors
 
@@ -170,7 +169,7 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
         )
     with col_info:
         st.markdown("### Sarah (AI English Teacher)")
-        st.caption("Güncel model eşleştirmeleri ve hata toleranslı hibrit sistem aktif.")
+        st.caption("Güvenli ve kararlı hibrit sohbet modu aktif.")
 
     st.divider()
 
@@ -187,17 +186,20 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
     col_mic, col_txt = st.columns([1, 1])
     
     with col_mic:
-        audio_file_input = st.audio_input("Konuşmak için tıklayın")
-        if audio_file_input is not None:
-            if not groq_keys:
-                st.error("Ses tanıma işlemi için geçerli bir Groq anahtarı bulunamadı.")
-            else:
-                with st.spinner("Sarah sesinizi dinliyor..."):
-                    transcribed = get_transcription(audio_file_input.getvalue())
-                    if transcribed:
-                        user_query = transcribed
-                    else:
-                        st.warning("Ses metne dönüştürülemedi.")
+        try:
+            audio_file_input = st.audio_input("Konuşmak için tıklayın")
+            if audio_file_input is not None:
+                if not groq_keys:
+                    st.error("Ses tanıma için Groq anahtarı gerekli.")
+                else:
+                    with st.spinner("Sarah sesinizi dinliyor..."):
+                        transcribed = get_transcription(audio_file_input.getvalue())
+                        if transcribed:
+                            user_query = transcribed
+                        else:
+                            st.warning("Ses metne dönüştürülemedi, lütfen yazarak devam edin.")
+        except Exception as audio_err:
+            st.info("Ses giriş bileşeni hazırlanıyor. Lütfen metin kutusunu kullanabilirsiniz.")
 
     with col_txt:
         text_query = st.chat_input("Veya buraya yazıp gönderin...")
@@ -233,7 +235,7 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
                     
                     st.rerun()
                 else:
-                    st.error("Tüm API anahtarları kota veya model hatası döndürdü. Detaylar:")
+                    st.error("Tüm API anahtarları yanıt veremedi veya kotaları doldu. Detaylar:")
                     if debug_errors:
                         for err in debug_errors:
                             st.code(err)
