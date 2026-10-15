@@ -8,7 +8,7 @@ from gtts import gTTS
 
 # --- SAYFA YAPILANDIRMASI ---
 st.set_page_config(
-    page_title="LearnAI - Yapay Zeka İngilizce Koçu", 
+    page_title="LearnAI - Kesintisiz Sesli İngilizce Pratiği", 
     page_icon="👩‍🏫", 
     layout="wide"
 )
@@ -31,8 +31,8 @@ if "messages" not in st.session_state:
 
 if "flashcards" not in st.session_state:
     st.session_state.flashcards = [
-        {"word": "Interactive", "meaning": "Etkileşimli", "example": "Interactive learning helps you speak faster."},
-        {"word": "Confident", "meaning": "Kendinden emin", "example": "Practice every day to feel more confident."}
+        {"word": "Automatic", "meaning": "Otomatik", "example": "The audio plays automatically."},
+        {"word": "Seamless", "meaning": "Kusursuz, kesintisiz", "example": "We have a seamless conversation."}
     ]
 
 if "card_index" not in st.session_state:
@@ -42,7 +42,6 @@ if "card_index" not in st.session_state:
 with st.sidebar:
     st.title("⚙️ Kontrol Paneli")
     
-    # API anahtarları tamamen gizli bir expander içerisine alındı
     with st.expander("🔑 API Anahtarları (Gizli Ayar)"):
         manual_groq = st.text_input("Groq API Key", type="password", value="")
         manual_gemini = st.text_input("Gemini API Key", type="password", value="")
@@ -50,10 +49,10 @@ with st.sidebar:
         if manual_groq: groq_api_key = manual_groq
         if manual_gemini: gemini_api_key = manual_gemini
 
-    st.write(f"**Motor Durumu:** {'⚡ Groq Hızlı Mod' if groq_api_key else '💎 Gemini Mod'}")
+    st.write(f"**Motor Durumu:** {'⚡ Groq Şimşek Mod' if groq_api_key else '💎 Gemini Mod'}")
     
     st.divider()
-    app_mode = st.radio("Uygulama Modu", ["🗣️ Canlı Sesli & Yazılı Sohbet", "🎴 Kelime Kartları"])
+    app_mode = st.radio("Uygulama Modu", ["🗣️ Canlı Otomatik Sesli Sohbet", "🎴 Kelime Kartları"])
     selected_level = st.selectbox("Seviyeniz", ["Beginner (A1-A2)", "Intermediate (B1-B2)", "Advanced (C1-C2)"])
     teacher_persona = st.selectbox("Öğretmen Tarzı", ["Samimi Arkadaş", "Sabırlı Eğitmen", "Enerjik Koç"])
 
@@ -61,53 +60,50 @@ with st.sidebar:
 groq_client = Groq(api_key=groq_api_key) if groq_api_key else None
 gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key else None
 
-system_prompt = f"You are Sarah, a friendly and warm female English AI teacher ({teacher_persona}) talking with a {selected_level} student. Keep your answers short, natural, conversational, correct mistakes gently, and always end with a quick follow-up question to keep the chat going."
+system_prompt = f"You are Sarah, a friendly and warm female English AI teacher ({teacher_persona}) talking with a {selected_level} student. Keep your answers short, natural, conversational, correct mistakes gently, and always end with a quick follow-up question to keep the conversation flowing."
 
 
 # ==============================================================================
-# MOD 1: CANLI SESLİ & YAZILI SOHBET (AVATAR DESTEKLİ)
+# MOD 1: CANLI OTOMATİK SESLİ & YAZILI SOHBET
 # ==============================================================================
-if app_mode == "🗣️ Canlı Sesli & Yazılı Sohbet":
+if app_mode == "🗣️ Canlı Otomatik Sesli Sohbet":
     
-    # Üst Bölüm: Kız Avatar ve Karşılama Alanı
+    # Üst Bölüm: Kız Avatar (Sarah)
     col_avatar, col_info = st.columns([1, 4])
     with col_avatar:
         st.image(
-            "https://encrypted-tbn0.gstatic.com/licensed-image?q=tbn:ANd9GcR8UQD4V16SP0lsoSEj1c5U_aPRrMdZHTUNppIZFvUQqevnKw0mJ3WdN6slLVVi_j1tbW6CDuMrAMAD_Lo", 
+            "https://encrypted-tbn0.gstatic.com/licensed-image?q=tbn:ANd9GcQaWGvl8gGreJdNp1fy2Nj5NdWiUdFk4bOGeGvgAlZIIpEvY5kkFOoNIG19cUJhye06V1VKgG5QkMaSUSU", 
             width=110, 
             caption="Sarah (AI Teacher)"
         )
     with col_info:
-        st.title("🗣️ Sarah ile Canlı İngilizce Pratiği")
-        st.markdown("Merhaba! Ben Sarah. İster klavyeden yazarak ister mikrofonu kullanarak benimle İngilizce konuşabilir, anında sesli ve yazılı yanıtlar alabilirsin.")
+        st.title("🗣️ Sarah ile Kesintisiz Sesli Pratik")
+        st.markdown("Merhaba! Aşağıdaki mikrofona konuşarak ya da dilerseniz metin yazarak sohbet edebilirsiniz. Sarah sana cevap verdiğinde **sesi otomatik olarak oynatacak** ve yeni bir şey söylemen için mikrofonu hazır tutacaktır.")
 
     st.divider()
 
-    # Sohbet Geçmişini Ekrana Bas
+    # Sohbet Geçmişi
     for msg in st.session_state.messages:
         avatar_icon = "👩‍🏫" if msg["role"] == "assistant" else "👤"
         with st.chat_message(msg["role"], avatar=avatar_icon):
             st.markdown(msg["content"])
 
-    # Girdi Seçimi (Mikrofon veya Metin)
-    input_choice = st.radio("İletişim Yöntemi Seçin:", ["⌨️ Yazı Yazarak Mesaj Gönder", "🎙️ Mikrofon ile Sesli Konuş"], horizontal=True)
+    # Girdi Alanı: Mikrofon ve Metin Alternatifi
+    col_mic, col_text = st.columns([2, 1])
     
     user_query = ""
 
-    if input_choice == "⌨️ Yazı Yazarak Mesaj Gönder":
-        user_query = st.chat_input("İngilizce mesajınızı buraya yazın...")
-    else:
-        st.write("🎙️ **Sesli Mesaj Kaydı:** (Mikrofon tuşuna basın, konuşun ve bitince durdurun)")
-        audio_file_input = st.audio_input("Mikrofonu Başlat")
+    with col_mic:
+        st.write("🎙️ **Sesli Konuşma Alanı:**")
+        audio_file_input = st.audio_input("Mikrofonu Başlat / Kaydet")
         
         if audio_file_input is not None and groq_client:
-            with st.spinner("Sesiniz Sarah tarafından dinleniyor (Whisper STT)..."):
+            with st.spinner("Sarah sesini dinliyor..."):
                 try:
                     audio_bytes = audio_file_input.getvalue()
                     audio_io = io.BytesIO(audio_bytes)
                     audio_io.name = "speech.wav"
 
-                    # Groq Whisper ile sesi anında metne dök
                     transcription = groq_client.audio.transcriptions.create(
                         file=(audio_io.name, audio_io.read()),
                         model="whisper-large-v3",
@@ -118,7 +114,13 @@ if app_mode == "🗣️ Canlı Sesli & Yazılı Sohbet":
                 except Exception as e:
                     st.error(f"Ses algılama hatası: {e}")
 
-    # Kullanıcıdan mesaj veya ses gelmişse işleme al
+    with col_text:
+        st.write("⌨️ **Veya Yazarak Gönder:**")
+        text_query = st.chat_input("Mesajınızı buraya yazın...")
+        if text_query:
+            user_query = text_query
+
+    # Kullanıcı mesajı geldiyse işleme al
     if user_query:
         st.session_state.messages.append({"role": "user", "content": user_query})
         with st.chat_message("user", avatar="👤"):
@@ -132,7 +134,7 @@ if app_mode == "🗣️ Canlı Sesli & Yazılı Sohbet":
                 messages_payload = [{"role": "system", "content": system_prompt}]
                 messages_payload.extend([{"role": m["role"], "content": m["content"]} for m in st.session_state.messages])
 
-                # 1. Groq Hızlı Model Denemesi
+                # 1. Groq Hızlı Model
                 if groq_client and not success:
                     try:
                         completion = groq_client.chat.completions.create(
@@ -146,30 +148,32 @@ if app_mode == "🗣️ Canlı Sesli & Yazılı Sohbet":
                     except Exception:
                         pass
 
-                # 2. Gemini Yedek Motor Denemesi
+                # 2. Gemini Yedek Model
                 if gemini_client and not success:
                     try:
                         chat_history_str = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.messages])
                         res = gemini_client.models.generate_content(
-                            model='gemini-3.6-flash',
+                            model='gemini-2.5-flash',
                             contents=f"{system_prompt}\n\n{chat_history_str}"
                         )
                         ai_response = res.text
                         success = True
                     except Exception as e:
-                        ai_response = f"Üzgünüm, şu an bağlantı kuramadım: {e}"
+                        ai_response = f"Bağlantı kurulamadı: {e}"
 
                 if ai_response:
                     st.markdown(ai_response)
                     st.session_state.messages.append({"role": "assistant", "content": ai_response})
 
-                    # Sarah'nın sesli yanıtını oynat
+                    # OTOMATİK SESLENDİRME (autoplay=True parametresi ile tuşa basmadan çalma)
                     try:
                         tts = gTTS(text=ai_response, lang='en', slow=False)
                         audio_fp = io.BytesIO()
                         tts.write_to_fp(audio_fp)
                         audio_fp.seek(0)
-                        st.audio(audio_fp, format="audio/mp3")
+                        
+                        # Tarayıcıda otomatik ses oynatma tetiklemesi
+                        st.audio(audio_fp, format="audio/mp3", autoplay=True)
                     except Exception:
                         pass
 
