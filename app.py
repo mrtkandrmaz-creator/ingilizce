@@ -14,10 +14,8 @@ st.set_page_config(
 )
 
 # --- GÜVENLİ API ANAHTARI YÖNETİMİ ---
-# Eğer secrets.toml boş dönerse veya okunamazsa hata vermemesi için güvenli katman
 def get_env_or_secret(key_list):
     for k in key_list:
-        # 1. Önce st.secrets kontrolü
         try:
             if hasattr(st, "secrets") and k in st.secrets:
                 val = st.secrets[k]
@@ -26,7 +24,6 @@ def get_env_or_secret(key_list):
         except Exception:
             pass
         
-        # 2. Alternatif olarak çevre değişkenleri (environment variables)
         env_val = os.environ.get(k)
         if env_val:
             return env_val
@@ -93,7 +90,7 @@ Always answer in English, correct big mistakes gently, and end your response wit
 # ==============================================================================
 if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
     st.title("🗣️ LearnAI: Canlı İngilizce Pratik")
-    st.caption("Groq Whisper (STT) + Groq Llama 3 (Hızlı Sohbet) + Gemini (Gramer Analizi) + gTTS (TTS)")
+    st.caption("Groq Whisper (STT) + Groq Llama 3.3 (Hızlı Sohbet) + Gemini (Gramer Analizi) + gTTS (TTS)")
 
     if not groq_client:
         st.error("🚨 Groq API anahtarı eksik! Lütfen sol menüdeki **'Özel API Anahtarı Gir / Düzenle'** kutucuğunu işaretleyerek Groq anahtarınızı yapıştırın.")
@@ -152,7 +149,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         messages_payload.extend([{"role": m["role"], "content": m["content"]} for m in st.session_state.messages])
 
                         try:
-                            # Güncel ve kararlı model
+                            # Güncel ve aktif Groq Llama 3.3 modeli
                             completion = groq_client.chat.completions.create(
                                 model="llama-3.3-70b-versatile",
                                 messages=messages_payload,
@@ -161,9 +158,9 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                             ai_response = completion.choices[0].message.content
                         except Exception as e:
                             try:
-                                # Yedek model fallback
+                                # Alternatif yedek model (Llama 3.1 8B)
                                 completion = groq_client.chat.completions.create(
-                                    model="llama3-70b-8192",
+                                    model="llama-3.1-8b-instant",
                                     messages=messages_payload,
                                     temperature=0.7
                                 )
