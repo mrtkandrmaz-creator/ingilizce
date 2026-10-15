@@ -55,7 +55,6 @@ with st.sidebar:
 
     st.divider()
     st.write("**Hibrit Bağlantı Durumu:**")
-    # DÜZELTME: _if yerine doğru olan 'if' ifadesi kullanıldı
     st.write(f"Groq API: {'✅ Aktif' if groq_api_key else '❌ Bulunamadı'}")
     st.write(f"Gemini API: {'✅ Aktif' if gemini_api_key else '❌ Bulunamadı'}")
     
@@ -97,8 +96,9 @@ if app_mode == "🗣️ Canlı Sohbet & Pratik":
                         messages_payload = [{"role": "system", "content": system_prompt}]
                         messages_payload.extend([{"role": m["role"], "content": m["content"]} for m in st.session_state.messages])
 
+                        # GÜNCELLENEN MODEL ADI (llama-3.3-70b-versatile)
                         completion = groq_client.chat.completions.create(
-                            model="llama3-70b-8192",
+                            model="llama-3.3-70b-versatile",
                             messages=messages_payload,
                             temperature=0.7
                         )
