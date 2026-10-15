@@ -12,3 +12,7 @@ python-docx
 groq
 streamlit-mic-recorder
 gTTS
+streamlit
+groq
+google-generativeai
+gtts
