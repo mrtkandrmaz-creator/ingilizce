@@ -103,7 +103,7 @@ with st.sidebar:
 groq_client = Groq(api_key=groq_api_key) if groq_api_key else None
 gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key else None
 
-# Sistem Promptu
+# Sıkılaştırılmış Sistem Promptu
 system_prompt = f"""You are a helpful and friendly English AI teacher ({teacher_persona}) for a {selected_level} student. 
 CRITICAL RULE: Always stay strictly focused on the user's input, answer their specific question directly, and do not wander off to unrelated topics. 
 Always answer in English, correct big mistakes gently, and keep the conversation relevant to what the user just said."""
@@ -114,7 +114,7 @@ Always answer in English, correct big mistakes gently, and keep the conversation
 # ==============================================================================
 if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
     st.title("🗣️ LearnAI: Canlı İngilizce Pratik")
-    st.caption("Groq Whisper (STT) + Groq Llama 3.3 (Hızlı Sohbet) + gTTS (Sesli Yanıt)")
+    st.caption("Groq Whisper (STT) + Groq Llama 3.3 (Hızlı Sohbet) + gTTS (Otomatik Sesli Yanıt)")
 
     if not groq_client:
         st.error("🚨 Groq API anahtarı bulunamadı! Lütfen sol menüden anahtarınızı girin.")
@@ -168,9 +168,9 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
     for i, msg in enumerate(st.session_state.messages):
         with st.chat_message(msg["role"]):
             st.write(msg["content"])
-            # Eğer asistan mesajı ise ve ses dosyası oturumda saklandıysa ses oynatıcıyı hemen altına ekle
+            # Eğer asistan mesajı ise ve ses dosyası oturumda saklandıysa otomatik oynatma ile sesçalar ekle
             if msg["role"] == "assistant" and "audio_bytes" in msg:
-                st.audio(msg["audio_bytes"], format="audio/mp3")
+                st.audio(msg["audio_bytes"], format="audio/mp3", autoplay=True)
         
         # Eğer mesaj bir assistant (yapay zeka) mesajı ise, hemen altına mikrofon koyalım
         if msg["role"] == "assistant":
@@ -200,9 +200,8 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
     if text_input_val:
         user_text = text_input_val
 
-    # Kullanıcıdan girdi alındıysa ekrana yaz ve yanıt üret
+    # Kullanıcıdan girdi alındıysa (Ses veya Metin) ekrana hemen yaz ve işleme koy
     if user_text:
-        # Önce kullanıcı mesajını ekrana (chat_message ile You olarak) ekle
         st.session_state.messages.append({"role": "user", "content": user_text})
         with st.chat_message("user"):
             st.write(user_text)
@@ -233,7 +232,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
 
                     st.write(ai_response)
 
-                    # gTTS ile Seslendirme (Kullanıcının çal tuşuna basabilmesi için kalıcı byte verisi)
+                    # gTTS ile Seslendirme (Otomatik oynatma aktif)
                     try:
                         tts = gTTS(text=ai_response, lang='en')
                         audio_fp = io.BytesIO()
@@ -241,7 +240,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         audio_fp.seek(0)
                         audio_bytes_data = audio_fp.read()
                         
-                        st.audio(audio_bytes_data, format="audio/mp3")
+                        st.audio(audio_bytes_data, format="audio/mp3", autoplay=True)
                         
                         # Asistan mesajını ve ses verisini oturuma kaydet
                         st.session_state.messages.append({
