@@ -149,7 +149,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         messages_payload.extend([{"role": m["role"], "content": m["content"]} for m in st.session_state.messages])
 
                         try:
-                            # Güncel ve aktif Groq Llama 3.3 modeli
+                            # Aktif Groq modeli (Llama 3.3 70B)
                             completion = groq_client.chat.completions.create(
                                 model="llama-3.3-70b-versatile",
                                 messages=messages_payload,
@@ -158,9 +158,9 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                             ai_response = completion.choices[0].message.content
                         except Exception as e:
                             try:
-                                # Alternatif yedek model (Llama 3.1 8B)
+                                # Alternatif aktif yedek model
                                 completion = groq_client.chat.completions.create(
-                                    model="llama-3.1-8b-instant",
+                                    model="openai/gpt-oss-20b",
                                     messages=messages_payload,
                                     temperature=0.7
                                 )
