@@ -17,17 +17,14 @@ st.set_page_config(
 def get_groq_key():
     try:
         if hasattr(st, "secrets"):
-            # 1. [api_keys] altındaki groq_keys listesi kontrolü
             if "api_keys" in st.secrets and "groq_keys" in st.secrets["api_keys"]:
                 keys = st.secrets["api_keys"]["groq_keys"]
                 if isinstance(keys, list) and len(keys) > 0:
                     return keys[0]
-            # 2. Düz groq_keys listesi kontrolü
             if "groq_keys" in st.secrets:
                 keys = st.secrets["groq_keys"]
                 if isinstance(keys, list) and len(keys) > 0:
                     return keys[0]
-            # 3. Klasik düz metin anahtar kontrolü
             if "GROQ_API_KEY" in st.secrets:
                 return st.secrets["GROQ_API_KEY"]
     except Exception:
@@ -37,21 +34,28 @@ def get_groq_key():
 def get_gemini_key():
     try:
         if hasattr(st, "secrets"):
-            # 1. [api_keys] altındaki gemini_keys listesi kontrolü
+            # Önce [api_keys] altındaki gemini_keys listesini tara
+            candidates = []
             if "api_keys" in st.secrets and "gemini_keys" in st.secrets["api_keys"]:
-                keys = st.secrets["api_keys"]["gemini_keys"]
-                if isinstance(keys, list) and len(keys) > 0:
-                    return keys[0]
-            # 2. Düz gemini_keys listesi kontrolü
-            if "gemini_keys" in st.secrets:
-                keys = st.secrets["gemini_keys"]
-                if isinstance(keys, list) and len(keys) > 0:
-                    return keys[0]
-            # 3. Klasik düz metin anahtar kontrolü
-            if "GEMINI_API_KEY" in st.secrets:
-                return st.secrets["GEMINI_API_KEY"]
-            if "GOOGLE_API_KEY" in st.secrets:
-                return st.secrets["GOOGLE_API_KEY"]
+                candidates = st.secrets["api_keys"]["gemini_keys"]
+            elif "gemini_keys" in st.secrets:
+                candidates = st.secrets["gemini_keys"]
+            elif "GEMINI_API_KEY" in st.secrets:
+                candidates = [st.secrets["GEMINI_API_KEY"]]
+            elif "GOOGLE_API_KEY" in st.secrets:
+                candidates = [st.secrets["GOOGLE_API_KEY"]]
+            
+            # 401 hatasına sebep olabilecek OAuth/Token formatlarını (AQ. ile başlayanlar vb.) filtrele, 
+            # Standart AIzaSy anahtarlarını önceliklendir
+            if isinstance(candidates, list):
+                for k in candidates:
+                    if k and isinstance(k, str):
+                        # Standart Gemini API anahtarları genellikle AIzaSy ile başlar
+                        if k.startswith("AIza"):
+                            return k
+                # Eğer standart bulunamazsa ve listede eleman varsa ilkini dener
+                if len(candidates) > 0 and isinstance(candidates[0], str):
+                    return candidates[0]
     except Exception:
         pass
     return os.environ.get("GEMINI_API_KEY", os.environ.get("GOOGLE_API_KEY", ""))
@@ -86,13 +90,13 @@ with st.sidebar:
         groq_api_key = st.text_input("Groq API Key", type="password", value=extracted_groq)
     else:
         groq_api_key = extracted_groq
-        st.success("🔒 Groq API anahtarı başarıyla yüklendi.")
+        st.success("🔒 Groq API anahtarı yüklendi.")
 
     if use_manual_keys or not extracted_gemini:
-        gemini_api_key = st.text_input("Gemini API Key", type="password", value=extracted_gemini)
+        gemini_api_key = st.text_input("Gemini API Key (AIzaSy...)", type="password", value=extracted_gemini)
     else:
         gemini_api_key = extracted_gemini
-        st.success("🔒 Gemini API anahtarı başarıyla yüklendi.")
+        st.success("🔒 Gemini API anahtarı yüklendi.")
     
     st.divider()
     app_mode = st.radio("Uygulama Modu", ["🗣️ Canlı Sohbet & Sesli Pratik", "🎴 Kelime Kartları (Flashcards)"])
@@ -103,7 +107,14 @@ with st.sidebar:
 
 # --- CLIENT'LARI BAŞLATMA ---
 groq_client = Groq(api_key=groq_api_key) if groq_api_key else None
-gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key else None
+
+gemini_client = None
+if gemini_api_key:
+    try:
+        # OAuth token veya geçersiz format ise uygulamanın çökmesini önle
+        gemini_client = genai.Client(api_key=gemini_api_key)
+    except Exception:
+        gemini_client = None
 
 # System Prompt Hazırlığı
 system_prompt = f"""You are a helpful and friendly English AI teacher ({teacher_persona}) for a {selected_level} student. 
@@ -119,7 +130,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
     st.caption("Groq Whisper (STT) + Groq Llama 3.3 (Hızlı Sohbet) + Gemini (Gramer Analizi) + gTTS (TTS)")
 
     if not groq_client:
-        st.error("🚨 Groq API anahtarı bulunamadı! Lütfen sol menüden anahtarınızı girin veya secrets.toml ayarlarınızı kontrol edin.")
+        st.error("🚨 Groq API anahtarı bulunamadı! Lütfen sol menüden anahtarınızı girin.")
 
     col_chat, col_feedback = st.columns([2, 1])
 
@@ -175,7 +186,6 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         messages_payload.extend([{"role": m["role"], "content": m["content"]} for m in st.session_state.messages])
 
                         try:
-                            # Güncel ve aktif Groq Llama 3.3 modeli
                             completion = groq_client.chat.completions.create(
                                 model="llama-3.3-70b-versatile",
                                 messages=messages_payload,
@@ -184,7 +194,6 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                             ai_response = completion.choices[0].message.content
                         except Exception as e:
                             try:
-                                # Alternatif yedek model
                                 completion = groq_client.chat.completions.create(
                                     model="openai/gpt-oss-20b",
                                     messages=messages_payload,
@@ -212,7 +221,9 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
         st.subheader("🧐 Gemini Gramer Koçu")
         st.caption("Son cümlenizdeki dil bilgisi hataları ve öneriler:")
 
-        if st.session_state.messages and gemini_client:
+        if not gemini_client:
+            st.warning("⚠️ Geçerli bir Gemini API anahtarı (AIzaSy...) bulunamadığı için gramer analizi devre dışı. Sol menüden geçerli bir anahtar girebilirsiniz.")
+        elif st.session_state.messages and gemini_client:
             last_user_msg = next((m["content"] for m in reversed(st.session_state.messages) if m["role"] == "user"), None)
             
             if last_user_msg:
@@ -234,7 +245,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         )
                         st.info(response.text)
                     except Exception as e:
-                        st.warning(f"Gemini analizi alınamadı: {e}")
+                        st.warning(f"Gemini kimlik doğrulama hatası (401): Lütfen aistudio.google.com adresinden standart bir Gemini API anahtarı (`AIzaSy...`) temin edin.")
         else:
             st.write("Analiz almak için konuşmaya veya yazmaya başlayın!")
 
