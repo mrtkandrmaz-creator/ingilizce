@@ -13,7 +13,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- GÜVENLİ VE ESNEK API ANAHTARI YÖNETİMİ ([api_keys] TOML DESTEĞİ) ---
+# --- GÜVENLİ VE ESNEK API ANAHTARI YÖNETİMİ ---
 def get_groq_key():
     try:
         if hasattr(st, "secrets"):
@@ -34,7 +34,6 @@ def get_groq_key():
 def get_gemini_key():
     try:
         if hasattr(st, "secrets"):
-            # Önce [api_keys] altındaki gemini_keys listesini tara
             candidates = []
             if "api_keys" in st.secrets and "gemini_keys" in st.secrets["api_keys"]:
                 candidates = st.secrets["api_keys"]["gemini_keys"]
@@ -45,15 +44,10 @@ def get_gemini_key():
             elif "GOOGLE_API_KEY" in st.secrets:
                 candidates = [st.secrets["GOOGLE_API_KEY"]]
             
-            # 401 hatasına sebep olabilecek OAuth/Token formatlarını (AQ. ile başlayanlar vb.) filtrele, 
-            # Standart AIzaSy anahtarlarını önceliklendir
             if isinstance(candidates, list):
                 for k in candidates:
-                    if k and isinstance(k, str):
-                        # Standart Gemini API anahtarları genellikle AIzaSy ile başlar
-                        if k.startswith("AIza"):
-                            return k
-                # Eğer standart bulunamazsa ve listede eleman varsa ilkini dener
+                    if k and isinstance(k, str) and k.startswith("AIza"):
+                        return k
                 if len(candidates) > 0 and isinstance(candidates[0], str):
                     return candidates[0]
     except Exception:
@@ -111,7 +105,6 @@ groq_client = Groq(api_key=groq_api_key) if groq_api_key else None
 gemini_client = None
 if gemini_api_key:
     try:
-        # OAuth token veya geçersiz format ise uygulamanın çökmesini önle
         gemini_client = genai.Client(api_key=gemini_api_key)
     except Exception:
         gemini_client = None
@@ -144,36 +137,37 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
 
         st.markdown("---")
         
-        # Girdi Yöntemi Seçimi
-        input_method = st.radio("Girdi Yöntemi Seçin:", ["⌨️ Yazı Yazarak", "🎙️ Sesli Konuşarak (Mikrofon)"], horizontal=True)
+        # Sürekli Hazır Ses Kayıt Alanı (Asistanın cevabından hemen sonra konuşabilmek için üstte)
+        st.markdown("🎙️ **Sesli Yanıt Ver (Mikrofon):**")
+        audio_file_input = st.audio_input("Asistana sesli yanıt göndermek için tıklayın")
         
         user_text = ""
 
-        if input_method == "⌨️ Yazı Yazarak":
-            user_text = st.chat_input("İngilizce mesajınızı yazın ve enter tuşuna basın...")
-            
-        else:
-            st.write("🎙️ **Mikrofona konuşun ve kaydı tamamlayın:**")
-            audio_file_input = st.audio_input("Ses kaydetmek için tıklayın")
-            
-            if audio_file_input is not None and groq_client:
-                with st.spinner("Sesiniz Groq Whisper ile metne dönüştürülüyor..."):
-                    try:
-                        audio_bytes = audio_file_input.getvalue()
-                        audio_io = io.BytesIO(audio_bytes)
-                        audio_io.name = "audio.wav"
+        # Alternatif Metin Girişi
+        with st.expander("⌨️ Veya Metin Yazarak Devam Et"):
+            text_input_val = st.chat_input("İngilizce mesajınızı yazın...")
+            if text_input_val:
+                user_text = text_input_val
 
-                        transcription = groq_client.audio.transcriptions.create(
-                            file=(audio_io.name, audio_io.read()),
-                            model="whisper-large-v3",
-                            response_format="text",
-                            language="en"
-                        )
-                        user_text = transcription.strip()
-                    except Exception as e:
-                        st.error(f"Groq Whisper Hatası: {e}")
+        # Mikrofon girdisi varsa Whisper ile metne çevir
+        if audio_file_input is not None and groq_client:
+            with st.spinner("Sesiniz Groq Whisper ile metne dönüştürülüyor..."):
+                try:
+                    audio_bytes = audio_file_input.getvalue()
+                    audio_io = io.BytesIO(audio_bytes)
+                    audio_io.name = "audio.wav"
 
-        # Eğer metin veya mikrofondan çevrilen yazı elde edildiyse işleme al
+                    transcription = groq_client.audio.transcriptions.create(
+                        file=(audio_io.name, audio_io.read()),
+                        model="whisper-large-v3",
+                        response_format="text",
+                        language="en"
+                    )
+                    user_text = transcription.strip()
+                except Exception as e:
+                    st.error(f"Groq Whisper Hatası: {e}")
+
+        # Eğer kullanıcı yazı yazdıysa veya mikrofondan ses çevrildiyse işleme al
         if user_text:
             st.session_state.messages.append({"role": "user", "content": user_text})
             with st.chat_message("user"):
@@ -206,13 +200,13 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         st.write(ai_response)
                         st.session_state.messages.append({"role": "assistant", "content": ai_response})
 
-                        # gTTS ile Seslendirme
+                        # gTTS ile Seslendirme ve otomatik oynatma
                         try:
                             tts = gTTS(text=ai_response, lang='en')
                             audio_fp = io.BytesIO()
                             tts.write_to_fp(audio_fp)
                             audio_fp.seek(0)
-                            st.audio(audio_fp, format="audio/mp3")
+                            st.audio(audio_fp, format="audio/mp3", autoplay=True)
                         except Exception as tts_err:
                             st.warning(f"Ses sentezleme uyarısı: {tts_err}")
 
@@ -222,7 +216,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
         st.caption("Son cümlenizdeki dil bilgisi hataları ve öneriler:")
 
         if not gemini_client:
-            st.warning("⚠️ Geçerli bir Gemini API anahtarı (AIzaSy...) bulunamadığı için gramer analizi devre dışı. Sol menüden geçerli bir anahtar girebilirsiniz.")
+            st.warning("⚠️ Geçerli bir Gemini API anahtarı (AIzaSy...) bulunamadığı için gramer analizi devre dışı.")
         elif st.session_state.messages and gemini_client:
             last_user_msg = next((m["content"] for m in reversed(st.session_state.messages) if m["role"] == "user"), None)
             
@@ -245,7 +239,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                         )
                         st.info(response.text)
                     except Exception as e:
-                        st.warning(f"Gemini kimlik doğrulama hatası (401): Lütfen aistudio.google.com adresinden standart bir Gemini API anahtarı (`AIzaSy...`) temin edin.")
+                        st.warning(f"Gemini analizi alınamadı: {e}")
         else:
             st.write("Analiz almak için konuşmaya veya yazmaya başlayın!")
 
