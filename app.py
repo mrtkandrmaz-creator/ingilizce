@@ -8,8 +8,8 @@ from gtts import gTTS
 
 # --- SAYFA YAPILANDIRMASI ---
 st.set_page_config(
-    page_title="LearnAI - Sesli İngilizce Asistanı", 
-    page_icon="✨", 
+    page_title="LearnAI - Hızlı İngilizce Asistanı", 
+    page_icon="⚡", 
     layout="wide"
 )
 
@@ -41,7 +41,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- ÇOKLU API ANAHTARLARINI ESNEK OKUMA ---
+# --- ÇOKLU API ANAHTARLARINI OKUMA ---
 groq_keys = []
 gemini_keys = []
 
@@ -65,20 +65,19 @@ try:
         
     if not gemini_keys and "GEMINI_API_KEY" in st.secrets:
         gemini_keys = extract_keys(st.secrets["GEMINI_API_KEY"])
-
-except Exception as e:
-    st.sidebar.error(f"Secrets okuma istisnası: {e}")
+except Exception:
+    pass
 
 # --- OTURUM DURUMLARI (SESSION STATE) ---
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {"role": "assistant", "content": "Hello! I'm Sarah, your AI English teacher. How are you doing today? Let's practice speaking!"}
+        {"role": "assistant", "content": "Hello! I'm Sarah, your AI English teacher. How can I help you practice today?"}
     ]
 
 if "flashcards" not in st.session_state:
     st.session_state.flashcards = [
-        {"word": "Resilient", "meaning": "Dayanıklı, dirençli", "example": "You must be resilient when learning a new language."},
-        {"word": "Seamless", "meaning": "Kusursuz, akıcı", "example": "We have a seamless conversation."}
+        {"word": "Lightning", "meaning": "Yıldırım, çok hızlı", "example": "This app runs at lightning speed."},
+        {"word": "Efficient", "meaning": "Verimli, hızlı çalışan", "example": "We use optimized API calls."}
     ]
 
 if "card_index" not in st.session_state:
@@ -87,55 +86,49 @@ if "card_index" not in st.session_state:
 # --- SIDEBAR (KONTROL PANELİ) ---
 with st.sidebar:
     st.title("⚙️ Kontrol Paneli")
-    
-    st.write(f"**Yüklü Groq Key:** {len(groq_keys)} adet")
-    st.write(f"**Yüklü Gemini Key:** {len(gemini_keys)} adet")
-    
-    if len(groq_keys) == 0 and len(gemini_keys) == 0:
-        st.warning("⚠️ Hiçbir API anahtarı algılanamadı!")
+    st.write(f"**Groq Key:** {len(groq_keys)} adet")
+    st.write(f"**Gemini Key:** {len(gemini_keys)} adet")
     
     st.divider()
-    app_mode = st.radio("Mod Seçimi", ["🗣️ Canlı Sesli Sohbet", "🎴 Kelime Kartları"])
+    app_mode = st.radio("Mod Seçimi", ["🗣️ Canlı Sohbet", "🎴 Kelime Kartları"])
     selected_level = st.selectbox("Seviyeniz", ["Beginner (A1-A2)", "Intermediate (B1-B2)", "Advanced (C1-C2)"])
     teacher_persona = st.selectbox("Öğretmen Tarzı", ["Samimi Arkadaş", "Sabırlı Eğitmen", "Enerjik Koç"])
 
-system_prompt = f"You are Sarah, a friendly and warm female English AI teacher ({teacher_persona}) talking with a {selected_level} student. Keep your answers short, natural, conversational, correct mistakes gently, and always end with a quick follow-up question to keep the conversation flowing."
+system_prompt = f"You are Sarah, a friendly and warm female English AI teacher ({teacher_persona}) talking with a {selected_level} student. Keep your answers short, natural, conversational, correct mistakes gently, and always end with a quick follow-up question."
 
 
 # ==============================================================================
-# HİBRİT YANIT ÜRETME FONKSİYONLARI (GÜVENLİ İZOLASYON)
+# HIZLI VE OPTİMİZE YANIT ÜRETME FONKSİYONLARI
 # ==============================================================================
 def get_ai_response(messages_payload):
-    errors = []
-    
-    # 1. Groq anahtarlarını dene
-    for i, g_key in enumerate(groq_keys):
+    # 1. En hızlı model olan Groq llama-3.1-8b-instant ile hızlıca dene
+    for g_key in groq_keys:
         try:
             client = Groq(api_key=g_key)
             completion = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="llama-3.1-8b-instant",  # En hızlı ve hafif model
                 messages=messages_payload,
                 temperature=0.7,
-                max_tokens=300
+                max_tokens=250
             )
             if completion and completion.choices:
-                return completion.choices[0].message.content, None
-        except Exception as e:
-            errors.append(f"Groq Key #{i+1}: {str(e)}")
+                return completion.choices[0].message.content
+        except Exception:
+            continue
 
-    # 2. Gemini anahtarlarını dene
+    # 2. Groq yanıt vermezse Gemini 1.5 Flash ile devam et
     chat_history_str = "\n".join([f"{m['role']}: {m['content']}" for m in messages_payload if m['role'] != 'system'])
-    for i, gem_key in enumerate(gemini_keys):
+    for gem_key in gemini_keys:
         try:
             genai.configure(api_key=gem_key)
-            model = genai.GenerativeModel('gemini-3.6-flash')
+            model = genai.GenerativeModel('gemini-1.5-flash')
             response = model.generate_content(f"{system_prompt}\n\nChat History:\n{chat_history_str}")
             if response and hasattr(response, 'text') and response.text:
-                return response.text, None
-        except Exception as e:
-            errors.append(f"Gemini Key #{i+1}: {str(e)}")
+                return response.text
+        except Exception:
+            continue
 
-    return None, errors
+    return "⚠️ Şu an tüm API anahtarlarında yoğunluk yaşanıyor. Lütfen birkaç saniye sonra tekrar deneyin."
 
 
 def get_transcription(audio_bytes):
@@ -157,9 +150,9 @@ def get_transcription(audio_bytes):
 
 
 # ==============================================================================
-# MOD 1: CANLI SESLİ & YAZILI SOHBET
+# MOD 1: CANLI SOHBET
 # ==============================================================================
-if app_mode == "🗣️ Canlı Sesli Sohbet":
+if app_mode == "🗣️ Canlı Sohbet":
     
     col_avatar, col_info = st.columns([1, 5])
     with col_avatar:
@@ -169,7 +162,7 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
         )
     with col_info:
         st.markdown("### Sarah (AI English Teacher)")
-        st.caption("Güvenli ve kararlı hibrit sohbet modu aktif.")
+        st.caption("⚡ Ultra hızlı yanıt modu aktif.")
 
     st.divider()
 
@@ -181,28 +174,21 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
     user_query = ""
 
     st.markdown("---")
-    st.markdown("🎙️ **Cevabınızı sesli kaydedin veya yazın:**")
     
     col_mic, col_txt = st.columns([1, 1])
-    
     with col_mic:
         try:
-            audio_file_input = st.audio_input("Konuşmak için tıklayın")
-            if audio_file_input is not None:
-                if not groq_keys:
-                    st.error("Ses tanıma için Groq anahtarı gerekli.")
-                else:
-                    with st.spinner("Sarah sesinizi dinliyor..."):
-                        transcribed = get_transcription(audio_file_input.getvalue())
-                        if transcribed:
-                            user_query = transcribed
-                        else:
-                            st.warning("Ses metne dönüştürülemedi, lütfen yazarak devam edin.")
-        except Exception as audio_err:
-            st.info("Ses giriş bileşeni hazırlanıyor. Lütfen metin kutusunu kullanabilirsiniz.")
+            audio_file_input = st.audio_input("Sesli Mesaj Gönder")
+            if audio_file_input is not None and groq_keys:
+                with st.spinner("Dinleniyor..."):
+                    transcribed = get_transcription(audio_file_input.getvalue())
+                    if transcribed:
+                        user_query = transcribed
+        except Exception:
+            pass
 
     with col_txt:
-        text_query = st.chat_input("Veya buraya yazıp gönderin...")
+        text_query = st.chat_input("Mesajınızı yazın...")
         if text_query:
             user_query = text_query
 
@@ -211,19 +197,18 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
         with st.chat_message("user", avatar="👤"):
             st.markdown(user_query)
 
-        ai_response = ""
-
         with st.chat_message("assistant", avatar="👩‍🏫"):
-            with st.spinner("Sarah düşünüyor..."):
+            with st.spinner("Sarah yazıyor..."):
                 messages_payload = [{"role": "system", "content": system_prompt}]
                 messages_payload.extend([{"role": m["role"], "content": m["content"]} for m in st.session_state.messages])
 
-                ai_response, debug_errors = get_ai_response(messages_payload)
+                ai_response = get_ai_response(messages_payload)
 
                 if ai_response:
                     st.markdown(ai_response)
                     st.session_state.messages.append({"role": "assistant", "content": ai_response})
 
+                    # Seslendirmeyi hatasız ve hızlı yap
                     try:
                         tts = gTTS(text=ai_response, lang='en', slow=False)
                         audio_fp = io.BytesIO()
@@ -234,31 +219,25 @@ if app_mode == "🗣️ Canlı Sesli Sohbet":
                         pass
                     
                     st.rerun()
-                else:
-                    st.error("Tüm API anahtarları yanıt veremedi veya kotaları doldu. Detaylar:")
-                    if debug_errors:
-                        for err in debug_errors:
-                            st.code(err)
 
 
 # ==============================================================================
 # MOD 2: KELİME KARTLARI
 # ==============================================================================
 elif app_mode == "🎴 Kelime Kartları":
-    st.title("🎴 Sarah ile Modern Kelime Kartları")
+    st.title("🎴 Kelime Kartları")
     cards = st.session_state.flashcards
     idx = st.session_state.card_index
 
     if cards:
         current_card = cards[idx]
-        
-        st.info(f"**Kelime:** {current_card['word']} \n\n *Örnek Cümle:* {current_card['example']}")
+        st.info(f"**Kelime:** {current_card['word']} \n\n *Örnek:* {current_card['example']}")
         
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("👁️ Türkçe Anlamı"):
+            if st.button("👁️ Anlamı"):
                 st.success(f"Anlamı: {current_card['meaning']}")
         with col2:
-            if st.button("➡️ Sonraki Kelime"):
+            if st.button("➡️ Sonraki"):
                 st.session_state.card_index = (idx + 1) % len(cards)
                 st.rerun()
