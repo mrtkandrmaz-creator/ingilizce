@@ -1,6 +1,7 @@
 import os
 import io
 import json
+import base64
 import streamlit as st
 from groq import Groq
 from google import genai
@@ -13,21 +14,32 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- CSS İLE METİN VE CHAT GÖRÜNÜRLÜK AYARLARI ---
+# --- ÖZEL CSS İLE KESİN ÇÖZÜM (Görünür Yazılar ve Modern Tasarım) ---
 st.markdown("""
 <style>
-/* Sohbet mesajlarındaki yazıların her temada net okunması için stil ayarı */
-div[data-testid="stChatMessage"] {
-    background-color: #262730;
-    border-radius: 10px;
-    padding: 10px;
-    margin-bottom: 10px;
+/* Kullanıcı Mesaj Kutusu */
+.user-msg {
+    background-color: #2e7d32;
+    color: #ffffff !important;
+    padding: 12px 16px;
+    border-radius: 12px;
+    margin: 8px 0;
+    text-align: right;
+    font-size: 16px;
+    font-weight: 500;
 }
-div[data-testid="stChatMessage"] p {
-    color: #FFFFFF !important;
-    font-size: 16px !important;
+/* Yapay Zeka Mesaj Kutusu */
+.assistant-msg {
+    background-color: #2d2d2d;
+    color: #ffffff !important;
+    padding: 12px 16px;
+    border-radius: 12px;
+    margin: 8px 0;
+    text-align: left;
+    font-size: 16px;
+    border-left: 4px solid #4CAF50;
 }
-/* Modern Mikrofon Kutusu Tasarımı */
+/* Mikrofon Alanı Tasarımı */
 div[data-testid="stAudioInput"] {
     background-color: #1E1E1E;
     border: 2px dashed #4CAF50;
@@ -156,7 +168,7 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
 
     user_text = ""
 
-    # 1. Başlangıçta henüz mesaj yoksa en üste karşılama mikrofonu koyalım
+    # 1. Başlangıçta mesaj yoksa karşılama mikrofonu
     if not st.session_state.messages:
         st.info("👋 İngilizce pratik yapmak için aşağıdaki mikrofona tıklayarak konuşmaya başlayın!")
         audio_file_input = st.audio_input("🎤 Konuşmaya Başla")
@@ -176,14 +188,19 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
                 except Exception as e:
                     st.error(f"Hata: {e}")
     
-    # 2. Mevcut mesaj geçmişini ekrana yazdır (Kullanıcı ve Asistan mesajları)
+    # 2. Mesaj geçmişini garantili HTML blokları ile ekrana yazdır
     for i, msg in enumerate(st.session_state.messages):
-        with st.chat_message(msg["role"]):
-            st.write(msg["content"])
-            if msg["role"] == "assistant" and "audio_bytes" in msg:
-                st.audio(msg["audio_bytes"], format="audio/mp3", autoplay=True)
+        if msg["role"] == "user":
+            st.markdown(f'<div class="user-msg"><b>You:</b> {msg["content"]}</div>', unsafe_allow_html=True)
+        else:
+            st.markdown(f'<div class="assistant-msg"><b>Teacher:</b> {msg["content"]}</div>', unsafe_allow_html=True)
+            # Otomatik ses oynatma için HTML5 audio tag (autoplay)
+            if "audio_bytes" in msg and msg["audio_bytes"]:
+                b64_audio = base64.b64encode(msg["audio_bytes"]).decode("utf-8")
+                audio_html = f'<audio autoplay="true" src="data:audio/mp3;base64,{b64_audio}"></audio>'
+                st.markdown(audio_html, unsafe_allow_html=True)
         
-        # Asistan mesajının hemen altına yeni sesli yanıt mikrofonunu yerleştir
+        # Son asistan mesajının hemen altına yeni sesli yanıt mikrofonunu yerleştir
         if msg["role"] == "assistant" and i == len(st.session_state.messages) - 1:
             st.markdown("👇 **Sesli yanıt vermek için mikrofona tıklayın:**")
             audio_file_input = st.audio_input(f"🎤 Sesli Yanıt Ver (Cevap #{i})")
@@ -210,58 +227,51 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
     if text_input_val:
         user_text = text_input_val
 
-    # 3. Kullanıcıdan bir girdi (Ses veya Yazı) geldiyse HEMEN ekrana yaz ve işleme koy
+    # 3. Kullanıcıdan girdi alındıysa hemen ekrana yaz ve işleme koy
     if user_text:
         st.session_state.messages.append({"role": "user", "content": user_text})
-        with st.chat_message("user"):
-            st.write(user_text)
 
         if groq_client:
-            with st.chat_message("assistant"):
-                with st.spinner("Yapay zeka yanıt veriyor..."):
-                    messages_payload = [{"role": "system", "content": system_prompt}]
-                    messages_payload.extend([{"role": m["role"], "content": m["content"]} for m in st.session_state.messages])
+            with st.spinner("Yapay zeka yanıt veriyor..."):
+                messages_payload = [{"role": "system", "content": system_prompt}]
+                messages_payload.extend([{"role": m["role"], "content": m["content"]} for m in st.session_state.messages])
 
+                try:
+                    completion = groq_client.chat.completions.create(
+                        model="llama-3.3-70b-versatile",
+                        messages=messages_payload,
+                        temperature=0.5
+                    )
+                    ai_response = completion.choices[0].message.content
+                except Exception as e:
                     try:
                         completion = groq_client.chat.completions.create(
-                            model="llama-3.3-70b-versatile",
+                            model="openai/gpt-oss-20b",
                             messages=messages_payload,
                             temperature=0.5
                         )
                         ai_response = completion.choices[0].message.content
-                    except Exception as e:
-                        try:
-                            completion = groq_client.chat.completions.create(
-                                model="openai/gpt-oss-20b",
-                                messages=messages_payload,
-                                temperature=0.5
-                            )
-                            ai_response = completion.choices[0].message.content
-                        except Exception as e2:
-                            ai_response = f"Groq API Hatası: {e2}"
+                    except Exception as e2:
+                        ai_response = f"Groq API Hatası: {e2}"
 
-                    st.write(ai_response)
-
-                    # gTTS ile otomatik seslendirme
-                    try:
-                        tts = gTTS(text=ai_response, lang='en')
-                        audio_fp = io.BytesIO()
-                        tts.write_to_fp(audio_fp)
-                        audio_fp.seek(0)
-                        audio_bytes_data = audio_fp.read()
-                        
-                        st.audio(audio_bytes_data, format="audio/mp3", autoplay=True)
-                        
-                        st.session_state.messages.append({
-                            "role": "assistant", 
-                            "content": ai_response,
-                            "audio_bytes": audio_bytes_data
-                        })
-                    except Exception as tts_err:
-                        st.warning(f"Ses sentezleme uyarısı: {tts_err}")
-                        st.session_state.messages.append({"role": "assistant", "content": ai_response})
+                # gTTS ile otomatik seslendirme
+                audio_bytes_data = None
+                try:
+                    tts = gTTS(text=ai_response, lang='en')
+                    audio_fp = io.BytesIO()
+                    tts.write_to_fp(audio_fp)
+                    audio_fp.seek(0)
+                    audio_bytes_data = audio_fp.read()
+                except Exception as tts_err:
+                    st.warning(f"Ses sentezleme uyarısı: {tts_err}")
                 
-                st.rerun()
+                st.session_state.messages.append({
+                    "role": "assistant", 
+                    "content": ai_response,
+                    "audio_bytes": audio_bytes_data
+                })
+            
+            st.rerun()
 
 
 # ==============================================================================
