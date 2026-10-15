@@ -107,7 +107,7 @@ def get_ai_response(messages_payload):
     for gem_key in gemini_keys:
         try:
             genai.configure(api_key=gem_key)
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            model = genai.GenerativeModel('gemini-3.6-flash')
             response = model.generate_content(f"{system_prompt}\n\nChat History:\n{chat_history_str}")
             if response and hasattr(response, 'text') and response.text:
                 return response.text
