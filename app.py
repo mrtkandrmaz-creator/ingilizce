@@ -13,6 +13,41 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- CSS İLE METİN VE CHAT GÖRÜNÜRLÜK AYARLARI ---
+st.markdown("""
+<style>
+/* Sohbet mesajlarındaki yazıların her temada net okunması için stil ayarı */
+div[data-testid="stChatMessage"] {
+    background-color: #262730;
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 10px;
+}
+div[data-testid="stChatMessage"] p {
+    color: #FFFFFF !important;
+    font-size: 16px !important;
+}
+/* Modern Mikrofon Kutusu Tasarımı */
+div[data-testid="stAudioInput"] {
+    background-color: #1E1E1E;
+    border: 2px dashed #4CAF50;
+    border-radius: 12px;
+    padding: 10px;
+    text-align: center;
+    margin-top: 5px;
+    margin-bottom: 15px;
+}
+div[data-testid="stAudioInput"] button {
+    background-color: #4CAF50 !important;
+    color: white !important;
+    font-size: 16px !important;
+    font-weight: bold !important;
+    border-radius: 8px !important;
+    padding: 8px 16px !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # --- GÜVENLİ VE ESNEK API ANAHTARI YÖNETİMİ ---
 def get_groq_key():
     try:
@@ -119,29 +154,6 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
     if not groq_client:
         st.error("🚨 Groq API anahtarı bulunamadı! Lütfen sol menüden anahtarınızı girin.")
 
-    # Modern ve Büyük Mikrofon Buton Tasarımı
-    st.markdown("""
-    <style>
-    div[data-testid="stAudioInput"] {
-        background-color: #1E1E1E;
-        border: 2px dashed #4CAF50;
-        border-radius: 12px;
-        padding: 10px;
-        text-align: center;
-        margin-top: 5px;
-        margin-bottom: 15px;
-    }
-    div[data-testid="stAudioInput"] button {
-        background-color: #4CAF50 !important;
-        color: white !important;
-        font-size: 16px !important;
-        font-weight: bold !important;
-        border-radius: 8px !important;
-        padding: 8px 16px !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
     user_text = ""
 
     # 1. Başlangıçta henüz mesaj yoksa en üste karşılama mikrofonu koyalım
@@ -200,7 +212,6 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
 
     # 3. Kullanıcıdan bir girdi (Ses veya Yazı) geldiyse HEMEN ekrana yaz ve işleme koy
     if user_text:
-        # Önce kullanıcı mesajını hafızaya ve ekrana ekle
         st.session_state.messages.append({"role": "user", "content": user_text})
         with st.chat_message("user"):
             st.write(user_text)
