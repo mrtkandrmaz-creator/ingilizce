@@ -6,6 +6,7 @@ import streamlit as st
 from groq import Groq
 from google import genai
 from gtts import gTTS
+from PIL import Image
 
 # --- SAYFA YAPILANDIRMASI ---
 st.set_page_config(
@@ -13,6 +14,11 @@ st.set_page_config(
     page_icon="🇬🇧", 
     layout="wide"
 )
+
+# --- AVATAR GÖRSELİNİ YÜKLEME ---
+# Buradaki dosya yolunu kendi avatar görselinizin yolu ile değiştirin
+avatar_image_path = "path/to/your/avatar.png" 
+avatar_image = Image.open(avatar_image_path)
 
 # --- ÖZEL CSS (Net Okunabilirlik ve Görünürlük) ---
 st.markdown("""
@@ -154,7 +160,7 @@ gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key else None
 system_prompt = f"""You are a concise English AI tutor ({teacher_persona}) for a {selected_level} student.
 CRITICAL RULES:
 1. Provide EXACTLY ONE response to the user's question. Never duplicate or repeat your answers.
-2. Answer directly and stay strictly relevant to the user's message.
+​2. Answer directly and stay strictly relevant to the user's message.
 3. Always respond in English."""
 
 
@@ -173,7 +179,12 @@ if app_mode == "🗣️ Canlı Sohbet & Sesli Pratik":
         if msg["role"] == "user":
             st.markdown(f'<div class="user-msg"><b>You:</b> {msg["content"]}</div>', unsafe_allow_html=True)
         else:
-            st.markdown(f'<div class="assistant-msg"><b>Teacher:</b> {msg["content"]}</div>', unsafe_allow_html=True)
+            # Öğretmen mesajının yanına avatar ekleme
+            col1, col2 = st.columns([1, 10])
+            with col1:
+                st.image(avatar_image, width=50)
+            with col2:
+                st.markdown(f'<div class="assistant-msg"><b>Teacher:</b> {msg["content"]}</div>', unsafe_allow_html=True)
             if "audio_bytes" in msg and msg["audio_bytes"]:
                 b64_audio = base64.b64encode(msg["audio_bytes"]).decode("utf-8")
                 audio_html = f'<audio autoplay="true" src="data:audio/mp3;base64,{b64_audio}"></audio>'
